@@ -1,0 +1,14 @@
+{
+    "mplab.clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}\\_build\\SZEN_PDU_0.1\\default"
+    ],
+    "mplab.clangd.path": "c:\\Program Files\\Microchip\\xc32\\v5.00\\bin\\xc32-clangd.exe",
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "cmake.sourceDirectory": "C:/Users/forgi/MPLABProjects/SZEN_PDU_0.1/cmake/SZEN_PDU_0.1/default",
+    "memory-inspector.debugTypes": [
+        "arm-debugger",
+        "embedded-debug",
+        "gdb",
+        "mplab-core-da"
+    ]
+}

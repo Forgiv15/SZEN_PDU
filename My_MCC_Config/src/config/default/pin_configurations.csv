@@ -1,0 +1,53 @@
+Pin Number,Pin ID,Custom Name,Function,Mode, Direction,Latch,Pull Up,Pull Down,Drive Strength
+1,PA00,GPIO_PA00,GPIO,Digital,In,n/a,Yes,No,NORMAL
+2,PA01,GPIO_PA01,GPIO,Digital,In,n/a,Yes,No,NORMAL
+3,PA02,GPIO_OUT,GPIO,Digital,Out,Low,,,NORMAL
+4,PA03,,ADC0_AIN1/VREFP,Analog,High Impedance,n/a,,,NORMAL
+5,PB04,TS1,ADC1_AIN6,Analog,High Impedance,n/a,,,NORMAL
+6,PB05,TS2,ADC1_AIN7,Analog,High Impedance,n/a,,,NORMAL
+9,PB06,TS3,ADC1_AIN8,Analog,High Impedance,n/a,,,NORMAL
+10,PB07,TS4,ADC1_AIN9,Analog,High Impedance,n/a,,,NORMAL
+11,PB08,12V_FUSED_IMON,ADC0_AIN2,Analog,High Impedance,n/a,,,NORMAL
+12,PB09,WP1_IMON,ADC0_AIN3,Analog,High Impedance,n/a,,,NORMAL
+13,PA04,WP2_IMON,ADC0_AIN4,Analog,High Impedance,n/a,,,NORMAL
+14,PA05,FUELP_IMON,ADC0_AIN5,Analog,High Impedance,n/a,,,NORMAL
+15,PA06,IGNINJ_IMON,ADC0_AIN6,Analog,High Impedance,n/a,,,NORMAL
+16,PA07,VENT2_IMON,ADC0_AIN7,Analog,High Impedance,n/a,,,NORMAL
+17,PA08,VENT1_IMON,ADC0_AIN8,Analog,High Impedance,n/a,,,NORMAL
+18,PA09,HYBRID_IMON,ADC0_AIN9,Analog,High Impedance,n/a,,,NORMAL
+19,PA10,NONFUSE_C,ADC0_AIN10,Analog,High Impedance,n/a,,,NORMAL
+20,PA11,GPIO_START,GPIO,Digital,Out,High,,,NORMAL
+23,PB10,,CAN1_TX,Digital,High Impedance,n/a,No,No,NORMAL
+24,PB11,,CAN1_RX,Digital,High Impedance,n/a,No,No,NORMAL
+25,PB12,GPIO_BLED,GPIO,Digital,Out,High,,,STRONG
+26,PB13,GPIO_RLED,GPIO,Digital,Out,High,,,STRONG
+27,PB14,GPIO_GLED,GPIO,Digital,Out,Low,,,STRONG
+28,PB15,GPIO_PB15,GPIO,Digital,In,n/a,Yes,No,NORMAL
+29,PA12,GPIO_PA12,GPIO,Digital,In,n/a,Yes,No,NORMAL
+30,PA13,GPIO_PA13,GPIO,Digital,In,n/a,Yes,No,NORMAL
+31,PA14,,OSCCTRL_XIN,Digital,High Impedance,n/a,No,No,NORMAL
+32,PA15,,OSCCTRL_XOUT,Digital,High Impedance,n/a,No,No,NORMAL
+35,PA16,,SERCOM1_PAD0,Digital,High Impedance,n/a,No,No,NORMAL
+36,PA17,,SERCOM1_PAD1,Digital,High Impedance,n/a,No,No,NORMAL
+37,PA18,GPIO_EN12V_E,GPIO,Digital,Out,High,,,NORMAL
+38,PA19,GPIO_WP1,GPIO,Digital,Out,High,,,NORMAL
+39,PB16,GPIO_WP2,GPIO,Digital,Out,High,,,NORMAL
+40,PB17,GPIO_FUEL_P,GPIO,Digital,Out,High,,,NORMAL
+41,PA20,GPIO_IGNINJ,GPIO,Digital,Out,High,,,NORMAL
+42,PA21,GPIO_VENT2,GPIO,Digital,Out,High,,,NORMAL
+43,PA22,GPIO_VENT1,GPIO,Digital,Out,High,,,NORMAL
+44,PA23,GPIO_HYBRID,GPIO,Digital,Out,High,,,NORMAL
+45,PA24,,CAN0_TX,Digital,High Impedance,n/a,No,No,NORMAL
+46,PA25,,CAN0_RX,Digital,High Impedance,n/a,No,No,NORMAL
+49,PB22,GPIO_PB22,GPIO,Digital,In,n/a,Yes,No,NORMAL
+50,PB23,GPIO_PM_SMBA,GPIO,Digital,In,n/a,No,No,NORMAL
+51,PA27,GPIO_PA27,GPIO,Digital,In,n/a,Yes,No,NORMAL
+53,PA28,GPIO_PA28,GPIO,Digital,In,n/a,Yes,No,NORMAL
+57,PA30,,Available,,,,,,NORMAL
+58,PA31,,Available,,,,,,NORMAL
+59,PB30,GPIO_FLTM,GPIO,Digital,In,n/a,No,No,NORMAL
+60,PB31,GPIO_FLT,GPIO,Digital,In,n/a,No,No,NORMAL
+61,PB00,GPIO_SDC_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
+62,PB01,GPIO_BSPD_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
+63,PB02,GPIO_BOTS_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
+64,PB03,GPIO_INERTIA_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL

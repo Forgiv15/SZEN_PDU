@@ -1,0 +1,1285 @@
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 1PIC32CM JH00/JH01 Family Errata
+The PIC32CM JH00/JH01 family of devices that you have received conforms functionally to the current Device
+Data Sheet (DS60001632), except for the anomalies described in this document.
+The silicon issues discussed in the following pages are for silicon revisions with the Device and Revision IDs
+listed in the following tables. The silicon issues are summarized in the Silicon Issues Summary.
+The errata described in this document will be addressed in future revisions of the PIC32CM JH00/JH01 family of
+devices.
+Note:  This document summarizes all silicon errata issues from all revisions of silicon, previous as well as
+current.
+Data Sheet clarifications  and corrections (if applicable) are located in Data Sheet Clarifications , following the
+discussion of silicon issues.
+Table 1. PIC32CM JH00 Family Silicon Device Identific ation
+DevicesDevice ID
+(DID[31:0])Silicon Revision ID
+(DID.REVISION[3:0])
+B0 C0 D0
+PIC32CM5164JH00100 0x11060X0E 0x1 0x2 –
+PIC32CM5164JH00064 0x11060X0F 0x1 0x2 –
+PIC32CM5164JH00048 0x11060X14 0x1 0x2 –
+PIC32CM5164JH00032 0x11060X15 0x1 0x2 –
+PIC32CM2532JH00100 0x11060X0D 0x1 0x2 –
+PIC32CM2532JH00064 0x11060X10 0x1 0x2 0x3
+PIC32CM2532JH00048 0x11060X13 0x1 0x2 0x3
+PIC32CM2532JH00032 0x11060X16 0x1 0x2 0x3
+Table 2. PIC32CM JH01 Family Silicon Device Identific ation
+DevicesDevice ID
+(DID[31:0])Silicon Revision ID
+(DID.REVISION[3:0])
+A0 B0 C0 D0
+PIC32CM1216JH01048 0x11061X0A 0x0 – – –
+PIC32CM1216JH01032 0x11061X0B 0x0 – – –
+PIC32CM5164JH01100 0x11060X00 – 0x1 0x2 –
+PIC32CM5164JH01064 0x11060X01 – 0x1 0x2 –
+PIC32CM5164JH01048 0x11060X02 – 0x1 0x2 –
+PIC32CM5164JH01032 0x11060X03 – 0x1 0x2 –
+PIC32CM2532JH01100 0x11060X04 – 0x1 0x2 –
+PIC32CM2532JH01064 0x11060X05 – 0x1 0x2 0x3
+PIC32CM2532JH01048 0x11060X06 – 0x1 0x2 0x3
+PIC32CM2532JH01032 0x11060X07 – 0x1 0x2 0x3
+Notes: 
+1. Refer to the “Device Service Unit” chapter in the current Device Data Sheet (DS60001632) for a detailed
+information on Device Identification  and Revision IDs for your specific  device.
+2. Cells with ‘–’ indicate this silicon revision does not exist. PIC32CM JH00/JH01 Family Silicon Errata and Data Sheet
+Clarific ations
+ PIC32CM JH00/JH01
+
+ PIC32CM JH00/JH01
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 2Table of Contents
+PIC32CM JH00/JH01 Family Errata...................................................................................................................................... 1
+1. Silicon Errata Summary................................................................................................................................................ 3
+2. PIC32CM JH00/JH01 Silicon Errata Issues................................................................................................................... 5
+2.1. Analog Comparator (AC)................................................................................................................................... 5
+2.2. Analog-to-Digital Converter (ADC)................................................................................................................... 5
+2.3. Controller Area Network (CAN)........................................................................................................................ 6
+2.4. Device.................................................................................................................................................................. 8
+2.5. Event System (EVSYS).........................................................................................................................................9
+2.6. Frequency Meter (FREQM).............................................................................................................................. 10
+2.7. MCRAMC........................................................................................................................................................... 11
+2.8. Oscillator Controller (OSCCTRL)..................................................................................................................... 11
+2.9. Position Decoder (PDEC)................................................................................................................................. 12
+2.10. SERCOM............................................................................................................................................................ 14
+2.11. SERCOM I2C...................................................................................................................................................... 14
+2.12. SERCOM SPI...................................................................................................................................................... 16
+2.13. SERCOM USART................................................................................................................................................17
+2.14. Timer/Counter (TC).......................................................................................................................................... 18
+2.15. Timer/Counter for Control (TCC)....................................................................................................................19
+2.16. OSC48M.............................................................................................................................................................19
+3. Silicon Debug Related Errata Summary................................................................................................................... 20
+4. PIC32CM JH00/JH01 Silicon Debug Related Errata Issues...................................................................................... 21
+4.1. Analog Comparator (AC)................................................................................................................................. 21
+4.2. Controller Area Network (CAN)...................................................................................................................... 21
+4.3. Non-Volatile Memory Controller (NVMCTRL)............................................................................................... 21
+4.4. SERCOM............................................................................................................................................................ 22
+4.5. SERCOM USART................................................................................................................................................22
+5. Data Sheet Clarifications ............................................................................................................................................ 23
+5.1. Pinout and Packaging for 32-Pin VQFN and 32-Pin TQFP .......................................................................... 23
+6. Revision History...........................................................................................................................................................25
+Microchip Information....................................................................................................................................................... 27
+The Microchip Website............................................................................................................................................... 27
+Product Change Notification  Service........................................................................................................................ 27
+Customer Support.......................................................................................................................................................27
+Microchip Devices Code Protection Feature............................................................................................................27
+Legal Notice..................................................................................................................................................................27
+Trademarks..................................................................................................................................................................28
+Quality Management System.....................................................................................................................................28
+Worldwide Sales and Service..................................................................................................................................... 29
+
+ PIC32CM JH00/JH01
+Silicon Errata Summary
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 31. Silicon Errata Summary
+Table 1-1. Silicon Errata Summary
+Module Feature Item # Issue SummaryAffected  Revisions
+A0 B0 C0 D0
+AC Analog Pins 2.1.1 Analog pins are shared between PTC and AC module. X X X X
+ADC Offset  Correction 2.2.1 Offset  correction is not supported in the 8-bit and 10-bit conversion resolution. X X X X
+ADC Reference Buffer  Offset 2.2.2First ADC conversions are incorrect when using Reference Buffer  Offset
+Compensation.X X X X
+ADC Sequence State 2.2.3The SEQSTATUS register is not updated properly when exiting Standby mode by
+an ADC conversions sequence event.X X X X
+CAN On-demand Clock Source 2.3.1 The CAN is not compatible with an on-demand clock source. X X X X
+CANDebug Message State
+Machine2.3.2Debug message handling state machine is not reset to Idle state when
+CCCR.INIT is set.X X X X
+CANTransmit Message Order
+Inversion2.3.3Message order inversion when transmitting from dedicated Tx Buffers
+configured  with same Message ID.X X X X
+CAN User Manual update 2.3.4Incomplete description in Section 3.5.2 Dedicated Tx Buffers  and 3.5.4 Tx Queue
+of the M_CAN User’s Manual related to transmission from multiple buffers
+configured  with the same Message ID.X X X X
+Device Standby entry 2.4.1 Potential hard fault upon standby entry when systick interrupt is enabled. X X X X
+DeviceOverconsumption in
+Standby2.4.2An overconsumption can happen when entering in Standby Sleep mode when
+The TC is enabled with run in standby disabled.X X X X
+Device Performance Mode 2.4.3In Standby mode, the regulator configured  in performance mode is not
+behaving as expected.X X X X
+Device Chip Erase 2.4.4 Chip Erase is not functional at ambient temperatures higher than 85°C. X X X X
+EVSYS Generic Clock 2.5.1Using synchronous, spurious overrun can appear with generic clock for the
+channel always on.X X X X
+EVSYSEvent Channel
+Configuration2.5.2Right after an Event channel configuration  is done and enabled, the
+channel is busy for 1 generic clock (GCLK_EVSYS_Channelx) tick; however the
+EVSYS.CHSTATUS.CHBUSYn corresponding bit is not set during that time.X X X X
+EVSYS CHBUSY Flag Stuck 2.5.3CHBUSY flag never reset upon software events in synchronous/resynchronized
+path modes with event detection on falling edges.X X X X
+EVSYS Spurious Overrun 2.5.4Overrun interrupt flag may be incorrectly set upon software events in
+synchronous/resynchronized path modes with event detection on both rising
+and falling edges.X X X X
+FREQM PAC protection 2.6.1 FREQM reads on the Control B register generate a PAC protection error. X X X X
+FREQM Lost Interrupt 2.6.2 DONE interrupt may be lost. X X X X
+FREQM STATUS.BUSY 2.6.3 No time-out period for a FREQM measurement cycle. X X X X
+MCRAMC PAC Write Protection 2.7.1 INTSTA register is PAC write protected. X X X X
+OSCCTRL FDPLL Unlock 2.8.1 Spurious DPLL unlocks may be detected during operation. X X X X
+OSCCTRLFDPLL96M On-Demand in
+Standby2.8.2 The FDPLL96M On Demand mode is not functional in Standby Sleep mode. X X X X
+PDEC Counter mode 2.9.1 Counting starts before the first retrigger event or command. X X X X
+PDEC Counter mode 2.9.2 Count of events is not functional. X X X X
+PDECAngular and Revolution
+Counters2.9.3With index input enabled i.e., EVCTRL.EVEI[2] and operating in X4/X2 mode,
+angular and revolution counters are incremented/decremented by two separate
+and unsynchronized sources.X X X X
+PDEC Error Flags 2.9.4An error detection (INTFLAG.ERR = 1) updates the STATUS Error flags  (HERR,
+WINERR, MPERR, IDXERR, QERR) with a variable delay.X X X X
+PDEC Direction Change 2.9.5A direction change detection (INTFLAG.DIR = 1) updates the STATUS.DIR bit with
+a variable delay.X X X X
+PDEC Hall Mode 2.9.6A windows error (WINERR) can be reported after a START command execution,
+or when leaving standby (with RUNSTDBY = 0).X X X X
+PDEC Hall Mode 2.9.7In HALL mode, WINERR Error interrupt (INTFLAG.WINERR = 1) can rise several
+times on a low-speed window error detection.X X X X
+SERCOM Software Reset 2.10.1When CTRLA.ENABLE = 0 and CTRLA.SWRST is asserted, software reset
+sequence is not initiated.X X X X
+
+ PIC32CM JH00/JH01
+Silicon Errata Summary
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 4...........continued
+Module Feature Item # Issue SummaryAffected  Revisions
+A0 B0 C0 D0
+SERCOM I2C Status Flag 2.11.1The BUSERR, COLL, LOWTOUT, SEXTTOUT and LENERR Status register bits are
+not automatically cleared.X X X X
+SERCOM I2C CLKHOLD Bit Status 2.11.2 The CLKHOLD Status bit is not read only. X X X X
+SERCOM I2CRepeated Start / Host mode
+10-bit2.11.3Repeated Start in 10-bit addressing mode for Host Write operations does not
+work.X X X X
+SERCOM I2C Repeated start 2.11.4 Bus error is generated during a Repeated Start (when QCEN = 1 and SCLSM = 1). X X X X
+SERCOM I2C NACK and Repeated Start 2.11.5 Repeated Start is not supported for High-Speed mode Host Read operations. X X X X
+SERCOM I2CRepeated Start / High-Speed
+mode2.11.6 Repeated Start is not supported for High-Speed mode Host Write operations. X X X X
+SERCOM I2C Client Mode with DMA 2.11.7 Character lost in I2C Client mode with DMA when a NACK occurs. X X X X
+SERCOM I2C Client mode 10-bit 2.11.8 I2C Client 10-bit addressing mode is not functional. X X X X
+SERCOM I2C Wakeup 2.11.9When an unexpected STOP occurs on the I2C bus the STATUS.BUSERR and
+INTFLAG.ERROR bits are set, but may not wake the system from Sleep mode. An
+unexpected START will not produce this issue.X X X X
+SERCOM I2C Automatic Acknowledge 2.11.10The I2C Client Automatic Acknowledge feature (CTRLB.AACKEN = 1) is not
+supported when doing a repeated start.X X X X
+SERCOM I2C RXNACK 2.11.11 The RXNACK status bit is invalid during the first DRDY interrupt. X X X X
+SERCOM SPI Data Preload 2.12.1 Data lost in SPI Client mode with Data Preload Enabled. X X X X
+SERCOM SPI Power Consumption 2.12.2 Extra power consumption in Standby Sleep mode after preloading a data. X X X X
+SERCOM SPI Reserved 2.12.3 Reserved X
+SERCOM
+USARTWakeup 2.13.1 The USART does not wake up the device on Error Interrupt (INTFLAG.ERROR=1). X X X X
+SERCOM
+USARTCollision Detection 2.13.2 Collision Detection does not stop Data Transfer. X X X X
+SERCOM
+USARTOver Consumption in
+Standby2.13.3 Unexpected over consumption in Standby mode. X X X X
+SERCOM
+USARTLIN Host Delays 2.13.4In SERCOM USART LIN Host mode, in the case where break, sync and identifier
+fields  are automatically transmitted when DATA is written with the identifier,  the
+LIN Host Header Delay between the sync and the ID transmission fields  is not
+correct.X X X X
+SERCOM
+USARTTwo stop bits mode in LIN
+Host2.13.5Two stop bits mode is not supported in SERCOM USART LIN Host mode in the
+case where break, sync and identifier  fields  are automatically transmitted when
+DATA is written with the identifier.X X X X
+TC SYNCBUSY Flag 2.14.1When clearing the STATUS.PERBUFV/STATUS.CCBUFx flag, SYNCBUSY flag is
+released before the PERBUF/CCBUFx register is restored to its appropriate
+value.X X X X
+TC Event Retrigger 2.14.2If a Retrigger event occurs exactly at the Channel Compare Match [n] time, the
+next Waveform Output [n] is missing or disturbed.X X X X
+TCCRe-trigger in RAMP2
+Operations2.15.1Re-trigger in RAMP2 operations is not supported if a prescaler is used and the
+re-trig of the counter is done on the next GCLK.X X X X
+TCC DMA Request 2.15.2On a TCC compare match, a DMA request is set whatever the CTRLA.DMAOS
+value.X X X X
+OSC48M Start-Up 2.16.1In some very rare cases, the OSC48M internal oscillator may not start at power-
+up or may not re-start during runtime after having been turned off manually or
+automatically by the system.X X X X
+Notes: 
+• Cells with ‘X’ indicate the issue is present in this revision of the silicon.
+• Cells with ‘-’ indicate this silicon revision does not exist for this issue.
+• The blank cell indicates the issue has been corrected or does not exist in this revision of the
+silicon.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 52. PIC32CM JH00/JH01 Silicon Errata Issues
+The following issues apply to the PIC32CM JH00/JH01 family of devices.
+Notes: 
+• Cells with ‘X’ indicate the issue is present in this revision of the silicon.
+• Cells with ‘-’ indicate this silicon revision does not exist for this issue.
+• The blank cell indicates the issue has been corrected or does not exist in this revision of the
+silicon.
+2.1 Analog Comparator (AC)
+2.1.1 Analog Pins
+Analog pins are shared between PTC and AC module. This may result in PTC accuracy issues.
+Workaround
+To guarantee the accuracy of the PTC measurement when using these shared pins, configure  the AC
+input to anything different  from default configuration,  that is, VDD scaler, DAC, or Bandgap.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.2 Analog-to-Digital Converter (ADC)
+2.2.1 Off se t  Corr ection  Reference
+Offset  correction using the OFFSETCORR register is not supported in the 8-bit and 10-bit conversion
+resolution.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 62.2.2 Reference Buff er  Off se t
+Total Unadjusted Error (TUE) of the ADC conversion result is out of specification  when,
+• Using the reference source as REFCTRL.REFSEL ≠ AVDD
+• Reference Buffer  Offset  Compensation is enabled (REFCTRL.REFCOMP = 1)
+Workaround
+The first five conversions after enabling ADC must be ignored. All further ADC conversions are within
+the specification.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.2.3 Sequence State
+The SEQSTATUS register is not updated properly when exiting Standby mode by an ADC conversions
+sequence event.
+The first conversion source is done (available in the RESULT register), but is not identified  and
+reported in the SEQSTATUS register.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.3 Controller Area Network (CAN)
+2.3.1 On-Demand Clock Source
+The CAN is not compatible with an on-demand clock source.
+Workaround
+Clear the ONDEMAND bit to zero for the oscillator source that provides the GCLK to the CAN.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.3.2 Debug Message State Machine
+If the CCCR.INIT bit is set by the Host by writing to the CCCR register or when the M_CAN enters
+BusOff  state, the debug message handling state machine stays in its current state instead of being
+reset to Idle state. Setting the CCCR.CCE does not change RXF1S.DMS.
+Scope:
+The erratum is limited to the case when the Debug on CAN Support feature is active. Regular
+operation is not affected,  in regular operation the debug message handling state machine always
+remains in Idle state.
+Effects:
+In the described case the debug message handling state machine is stopped and remains in the
+current state signaled by RXF1S.DMS. If RXF1S.DMS = "11", output m_can_dma_req  remains active.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 7Workaround
+If the debug message handling state machine has stopped while RXF1S.DMS = "01" or RXF1S.DMS
+= "10", it can be reset to Idle state by hardware reset or by reception of debug messages after
+CCCR.INIT is reset to zero.
+If the debug message handling state machine has stopped while RXF1S.DMS = "11" with
+m_can_dma_req  active, it can be reset to Idle state by hardware reset or by activating input
+m_can_dma_ack .
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.3.3 Transmit Message Order Inversion
+It may happen, depending on the delay between the individual Tx requests, that in the case where
+multiple Tx Buffers  are configured  with the same message ID the Tx Buffers  are not transmitted in
+order of the Tx Buffer  number (lowest number first).
+Scope:
+The erratum is limited to the case when multiple Tx Buffers  are configured  with the same message
+ID.
+Effects:
+In the case described it may happen, that Tx Buffers  configured  with the same message ID
+and pending Tx request are not transmitted with lowest Tx Buffer  number first (message order
+inversion).
+Workaround
+First write the group of Tx messages with same message ID to the message RAM and then
+afterwards request transmission of all these messages concurrently by a single write access to
+TXBAR. Before requesting a group of Tx messages with this message ID ensure that no message
+with this message ID has a pending Tx request.
+Use the Tx FIFO instead of dedicated Tx Buffers  for the transmission of several messages with the
+same message ID in a specific  order, as described in Section 3.5.3 of the “M_CAN User’s Manual”.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.3.4 User Manual Update
+Incomplete description in Section 3.5.2 “Dedicated Tx Buffers”  and Section 3.5.4 “Tx Queue of the
+M_CAN User’s Manual” related to transmission from multiple buffers  configured  with the same
+message ID.
+Description:
+3.5.2 Dedicated Tx Buffers
+Wording User’s Manual:
+In case that multiple dedicated Tx Buffers  are configured  with the same Message ID, the Tx Buffer
+with the lowest buffer  number is transmitted first.
+Enhancement:
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 8These Tx buffers  will be requested in ascending order with lowest buffer  number first.  Alternatively,
+all Tx buffers  configured  with the same message ID can be requested simultaneously by a single
+write access to TXBAR.
+3.5.4 Tx Queue
+Wording User’s Manual:
+In case that multiple Queue Buffers  are configured  with the same Message ID, the Queue Buffer
+with the lowest buffer  number is transmitted first.
+Replacement:
+If multiple Tx Queue buffers  are configured  with the same message ID, the transmission order
+depends on numbers of the buffers  where the messages were stored for transmission. As
+these buffer  numbers depend on the then current states of the PUT index, a prediction of the
+transmission order is not possible.
+Wording User’s Manual:
+An Add Request cyclically increments the Put Index to the next free Tx Buffer.
+Replacement:
+The Put Index always points to that free buffer  of the Tx Queue with the lowest buffer  number.
+Scope:
+Use of multiple dedicated Tx Buffers  or Tx Queue buffers  configured  with same message ID.
+Effects:
+If the dedicated Tx buffers  with the same message ID are not requested in ascending order or at
+the same time or in case of multiple Tx Queue buffers  with the same message ID, it cannot be
+guaranteed, that these messages are transmitted in ascending order with lowest buffer  number
+first.
+Workaround
+If a defined  order of transmission is required, the Tx FIFO will be used for transmission of messages
+with the same message ID. Alternatively dedicated Tx buffers  with same Message ID shall be
+requested in ascending order with lowest buffer  number first or by a single write access to TXBAR.
+Alternatively, a single Tx Buffer  can be used to transmit those messages one after the other.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.4 Device
+2.4.1 Standby Entry
+When the Systick interrupt is enabled and the standby back-bias option is set (STDBYCFG.BBIAS = 1),
+an hard fault can occur when the Systick interrupt coincides with the standby entry.
+Workaround
+Disable the Systick interrupt before entering standby and re-enable it after wake up.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 92.4.2 Ov er c onsumption  in Standby
+An overconsumption can happen when entering in Standby Sleep mode when the TC is enabled
+(CTRLA.ENABLE = 1) with run in Standby disabled (CTRLA.RUNSTDBY = 0).
+Workaround
+Disable the TC when entering in Standby Sleep mode.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.4.3 Performance Mode
+When entering Standby mode with the regulator configured  in Performance mode
+(STDBYCFG.VREGSMOD = 0x1), the system will wrongly switch to the low-power regulator and keep
+requesting GCLK0.
+Workaround
+Set SUPC VREG.RUNSTDBY = 0x1, which will force the system to use the main regulator.
+Another possible option is to configure  the regulator in auto mode (STDBYCFG.VREGSMOD = 0x0)
+and let the hardware automatically switch between main and low-power regulator.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.4.4 Chip Erase
+Chip Erase is not functional at ambient temperatures higher than 85°C.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.5 Event System (EVSYS)
+2.5.1 Generic Clock
+In synchronous mode, spurious overrun interrupts can be generated when the generic clock for a
+channel is always on (CHANNEL.ONDEMAND = 0).
+Workaround
+Set Generic Clock on Demand feature by setting CHANNEL.ONDEMAND = 1.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.5.2 Event Channel Con figur ation
+Right after an event channel configuration  is done and enabled, the channel is busy for one generic
+clock (GCLK_EVSYS_Channelx) tick; however, the EVSYS.CHSTATUS.CHBUSYn corresponding bit is not
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 10set during that time. This is noticeable when the EVSYS input GCLK frequency is less than the CPU
+frequency.
+Workaround
+Wait for at least one generic clock(GCLK_EVSYS_Channelx) tick before triggering the channel for the
+first time after it has been configured  and enabled.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.5.3 CHBUSY Flag Stuck
+If a software event occurs when the EVSYS is set in synchronous or resynchronized path modes
+(CHANNELn.PATH = 0x0/0x1) with event detection set on falling edges (CHANNELn.EDGESEL = 0x2),
+the CHSTATUS.CHBUSYn flag will be set but will never come back to 0. It is then impossible to know
+if the event user for this channel is ready or not to accept new events.
+Workaround
+Generate software events for this user through a dedicated channel configured  with event detection
+set on rising edges (CHANNELn.EDGESEL = 0x1).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.5.4 Spurious Overrun Interrupts
+If a software event occurs when the EVSYS is set in synchronous or resynchronized path
+modes (CHANNELn.PATH = 0x0/0x1) with event detection set on both rising and falling edges
+(CHANNELn.EDGESEL = 0x3), spurious overrun interrupts may occur (INTFLAG.OVRn).
+Workaround
+Generate software events for the event user through a dedicated channel configured  with event
+detection set on rising edges (CHANNELn.EDGESEL = 0x1).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.6 Frequency Meter (FREQM)
+2.6.1 PAC Pr ot ection  Error
+FREQM reads on the Control B register (FREQM.CTRLB) generate a PAC protection error.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.6.2 Lost Interrupt
+The DONE interrupt may be lost when the measurement period (CFGA.REFNUM * the reference
+clock period) is less than 4 APB clock periods.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 11Workaround
+The measurement reference period must be longer than 4 APB clock periods.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.6.3 STATUS.BUSY
+There is no timeout period for a FREQM measurement cycle. If the cycle count does not reach
+CFGA.REFNUM, the measurement cycle will not end and STATUS.BUSY will never deassert.
+Workaround
+If the measure signal may be very slow, may stop during the measurement, or have a frequency of
+0 Hz, the application code must monitor the measurement cycle and terminate it in an appropriate
+period of time.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.7 MCRAMC
+2.7.1 INTSTA Register is PAC Write Protected.
+When the MCRAMC is protected against register writes by the PAC, the INTSTA register becomes
+unexpectedly protected too.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.8 Oscillator Controller (OSCCTRL)
+2.8.1 FDPLL Unlock
+When using FDPLL at temperature below 25°C, spurious DPLL unlocks (OSCCTRL.DPLLSTATUS.LOCK
+= 0) may be detected while the FDPLL still adheres to the electrical characteristics metrics defined  in
+the data sheet. During these unlock periods, the DPLL output clock is halted and then restarts.
+Workaround
+When using FDPLL at temperature below 25°C, enable the lock bypass
+(OSCCTRL.DPLLCTRLB.LBYPASS = 1) to avoid losing FDPLL clock output during a false unlock status.
+The workaround does not avoid false unlock indications, but it disables the gating of the FDPLL clock
+output by the lock status, therefore, the clock is issued even if the FDPLL status shows unlocked.
+Pseudo Code:
+Set OSCCTRL.DPLLCTRLB.LBYPASS = 1
+Set DPLLCTRLA.ENABLE = 1
+Wait (OSCCTRL.DPLLSTATUS.CLKRDY = 1)
+Set Source for GCLK with DPLL
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 12Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.8.2 FDPLL96M On Demand Standby
+The FDPLL96M On Demand mode (DPLLCTRLA.ONDEMAND = 1) is not functional in Standby Sleep
+mode.
+Workaround
+Set DPLLCTRLA.ONDEMAND = 0 which makes the FDPLL96M always running in Standby Sleep mode.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9 P osition  Decoder (PDEC)
+2.9.1 Counter Mode
+Start, restart, or retrigger on event (EVCTRL.EVACT = 0x1) is not functional in Counter Operating
+Mode (CTRLA.MODE = 0x2).
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9.2 Counter Mode
+Counting Events (EVCTRL.EVACT = 0x2) is not functional in Counter Operating Mode (CTRLA.MODE =
+0x2).
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9.3 Angular and R e v olution  Counters
+With index input enabled, that is, EVCTRL.EVEI[2] and operating in X4/X2 mode, angular and
+revolution counters are incremented or decremented by two separate and unsynchronized sources
+(phases and index). This can lead to generating erroneous MC0 and MC1 events.
+Workaround
+If the application use case permits, operate PDEC in X4S/X2S mode by setting CTRLA.CONF[2:0] =
+0b001/ 0b011. In this mode, the revolution counter is incremented or decremented by a single
+source, that is angular counter overflow  or underflow.
+If the application use case restricts operation in X4S/X2S mode, then disable index input event, that
+is EVCTRL.EVEI[2] = 0. This ensures that revolution counter is incremented or decremented by a
+single source, that is, angular counter overflow  or underflow.  First occurrence of the index pulse
+can be detected using an external interrupt input and angular counter value can be reset in the
+corresponding interrupt service routine.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 13Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9.4 Error Flags
+An Error Detection (INTFLAG.ERR = 1) updates the STATUS Error flags  (HERR, WINERR, MPERR,
+IDXERR, QERR) with a variable delay.
+Workaround
+Poll the STATUS Error flags  until one of these bits is set.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9.5 Dir ection  Change
+A direction change detection (INTFLAG.DIR = 1) updates the STATUS.DIR bit with a variable delay.
+Workaround
+Do not consider the STATUS.DIR bit status when using the INTFLAG.DIR bit.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9.6 Hall Mode
+A Windows Error (WINERR) flag can be reported after a START command execution, or when leaving
+standby (with RUNSTDBY = 0).
+Workaround
+Ignore the Windows Error (WINERR) flag in Hall mode after a START command execution, or when
+leaving standby.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.9.7 Hall Mode
+In Hall mode, the WINERR Error Interrupt (INTFLAG.WINERR = 1) can rise several times on a low-
+speed window error detection.
+Workaround
+Disable the WINERR (INTCLR.WINERR = 1) at first error detection, then re-enable it once the error
+root cause at the application level is solved.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 142.10 SERCOM
+2.10.1 Softw ar e  Reset
+Software Reset (CTRLA.SWRST = 1) is not functional when the SERCOM is not enabled
+(CTRAL.ENABLE = 0).
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11 SERCOM I2C
+2.11.1 Status Flags
+In Client mode, the SEXTOUT, LOWTOUT, COLL, and BUSERR bits are not cleared when
+INTFLAG.AMATCH is cleared.
+Workaround
+Manually clear the status bits, SEXTOUT, LOWTOUT, COLL, and BUSERR, by writing these bits to ‘1’
+when INTFLAG.AMATCH is cleared.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.2 Status Flags
+The STATUS.CLKHOLD bit in Host and Client modes can be written, whereas it is a read-only status
+bit.
+Workaround
+Do not clear the STATUS.CLKHOLD bit to preserve the current clock hold state.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.3 Repeated Start
+For Host Write operations (excluding High-Speed mode) in 10-bit Addressing mode, writing
+CTRLB.CMD = 0x1 does not correctly issue a Repeated Start command.
+Workaround
+Write the same 10-bit address with the same direction bit to the ADDR.ADDR register to generate a
+Repeated Start.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.4 Repeated Start
+When the Quick command is enabled (CTRLB.QCEN = 1), the software can issue a Repeated Start by
+either writing the CTRLB.CMD or ADDR.ADDR bit fields.  If in these conditions SCL Stretch mode is
+CTRLA.SCLSM = 1, a bus error will be generated.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 15Workaround
+Use Quick Command mode (CTRLB.QCEN = 1) only if SCL Stretch mode is CTRLA.SCLSM = 0.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.5 Repeated Start or Host Mode 10-bit
+For High-Speed Host Read operations, sending a NACK (CTRLB.CMD = 0x2) forces a STOP to be
+issued, making repeated start not possible in that mode.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.6 Repeated Start
+For High-Speed Host Write operations, writing CTRLB.CMD = 0x1 issues a STOP command instead of
+a Repeated Start, making repeated start not possible in that mode.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.7 Client Mode with DMA
+In I2C Client Transmitter mode, at the reception of a NACK, if there is still data to be sent in the DMA
+buffer,  the DMA will push a data to the DATA register. Since a NACK was received, the transfer on
+the I2C bus will not occur causing the loss of this data.
+Workaround
+Configure  the DMA transfer size to the number of data to be received by the I2C Host. DMA cannot
+be used if the number of data to be received by the Host is not known.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.8 10-bit Addressing Mode
+I2C Client 10-bit addressing mode is not functional.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 162.11.9 No Wakeup Upon Unexpected STOP
+When an unexpected STOP occurs on the I2C bus, the STATUS.BUSERR and INTFLAG.ERROR bits are
+set but may not wake the system from Sleep mode. An unexpected START will not produce this
+issue.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.10 Aut omatic  Acknowledge
+The I2C Client Automatic Acknowledge feature (CTRLB.AACKEN = 1) is not supported when doing a
+repeated start.
+Workaround
+Do not use the AACKEN feature, implement a AMATCH handler instead.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.11.11 RXNACK
+The RXNACK status bit is invalid during the first DRDY interrupt.
+Workaround
+Use a software flag to track when to ignore RXNACK and reset this flag in the I2CS_AMATCH
+interrupt handler (workaround is not applicable when AACKEN = 1).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.12 SERCOM SPI
+2.12.1 SPI-Client Data Lost with Data Preload Enabled
+In SPI Client mode with Client Data Preload Enabled (CTRLB.PLOADEN = 1), the client transmitter
+may discard some data if the Host cannot keep the SPI Select pin low until the end of transmission.
+Workaround
+In SPI Client mode, the Client Select ( SS) pin must be kept low by the Host until the end of the
+transmission if the Client Data Preload feature is used (CTRLB.PLOADEN = 1).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.12.2 SPI-Client Extra Power Consumption  in Standby Sleep Mode
+Preloading a new SPI data (CTRLB.PLOADEN = 1) before going into Standby Sleep mode, may lead to
+extra power consumption.
+Workaround
+None.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 17Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.12.3 Reserved
+2.13 SERCOM USART
+2.13.1 Wakeup
+The USART does not wake-up the device on Error Interrupt (INTFLAG.ERROR = 1).
+Workaround
+Configure  the USART to wake-up the device on the RX Complete Interrupt (INTENSET.RXC = 1) in
+order to check the PERR/FERR status (STATUS.PERR = 1 or STATUS.FERR = 1).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.13.2 Collision De t ection
+In USART operating mode with Collision Detection enabled (CTRLB.COLDEN = 1), the SERCOM will
+not abort the current transfer as expected if a collision is detected and if the SERCOM APB Clock is
+lower than the SERCOM Generic Clock.
+Workaround
+The SERCOM APB clock must always be higher than the SERCOM Generic Clock to support collision
+detection.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.13.3 Over Consumption  in Standby
+When SERCOM USART CTRLA.RUNSTDBY = 0 and the receiver is disabled (CTRLB.RXEN = 0), the clock
+request to the GCLK generator feeding the SERCOM will stay asserted during Standby mode, leading
+to unexpected over consumption.
+Workaround
+Configure  CTRLA.RXPO and CTRLA.TXPO to use the same SERCOM PAD for RX and TX, or add an
+external pull up on the RX pin.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.13.4 LIN Host Delays
+In SERCOM USART LIN Host Mode (CTRLA.FORM = 0x2), in the case where break, sync, and identifier
+fields  are automatically transmitted when DATA is written with the identifier  (CTRLB.LINCMD = 0x2),
+the LIN Host Header Delay between the sync and the ID transmission fields  is not correct for the
+following cases:
+• CTRLC.HDRDLY = 0x2: Where the delay between sync and ID transmission fields  is 8-bit time
+instead of 4-bit time.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 18• CTRLC.HDRDLY = 0x3: Where the delay between sync and ID transmission fields  is 14-bit time
+instead of 4-bit time.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.13.5 Two stop bits mode in LIN Host
+Two Stop Bits Mode (CTRLB.SBMODE = 0x1) is not supported in SERCOM USART LIN Host
+Mode (CTRLA.FORM = 0x2) in the case where break, sync, and identifier  fields  are automatically
+transmitted when DATA is written with the identifier  (CTRLB.LINCMD = 0x2). One Stop bit is only
+supported.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.14 Timer/Counter (TC)
+2.14.1 SYNCBUSY Flag
+When clearing the STATUS.PERBUFV/STATUS.CCBUFx flag, the SYNCBUSY flag is released before the
+PERBUF/CCBUFx register is restored to its appropriate value.
+Workaround
+Clear successively twice the STATUS.PERBUFV/STATUS.CCBUFx flag to ensure that the PERBUF/
+CCBUFx register value is restored before updating it.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.14.2 Event Retrigger
+If a re-trigger event (EVCTRL.EVACTn = 0x1, RETRIGGER) occurs at the Channel Compare Match [n]
+time, the next Waveform Output [n] is corrupted.
+Workaround
+Use two channels to store their two successive (n and n+1) CC register values and combine their
+related waveform outputs to make signal redundancy.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 192.15 Timer/Counter for Control (TCC)
+2.15.1 Re-Trigger in RAMP2 Oper ations
+Re-trigger in RAMP2 operations (RAMP2, RAMP2A, RAMP2C, RAMP2CS) is not supported if a
+prescaler is used (CTRLA.PRESCALER ! = 0) and the re-trigger of the counter is done on the next
+GCLK (CTRLA.PRESCSYNC = GCLK or CTRLA.PRESCSYNC = RESYNC).
+Workaround
+Configure  the re-trigger of the counter on the next prescaler clock (CTRLA.PRESCSYNC = PRESC).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.15.2 DMA Request on Compare Match
+On a TCC compare match, a DMA request is set whatever the CTRLA.DMAOS value.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+2.16 OSC48M
+2.16.1 Start-Up
+In some very rare cases, the OSC48M internal oscillator may not start at power-up, or may not
+re-start during runtime after having been turned off manually or automatically by the system.
+Workaround
+Failures at power-up can be solved by power cycling the unit.
+Failures at run-time can be addressed by keeping the OSC48M always enabled
+(OSC48MCTRL.ENABLE = 1, OSC48MCTRL.ONDEMAND = 0, OSC48MCTRL.RUNSTDBY = 1).
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+Silicon Debug Related Errata Summary
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 203. Silicon Debug Related Errata Summary
+Table 3-1. Silicon Debug Related Errata Summary
+Module Feature Item # Issue SummaryAffected  Revisions
+A0 B0 C0 D0
+ACThe DBGCTRL Register
+Reset4.1.1 The DBGCTRL register is unexpectedly reset by CTRLA.SWRST. X X X X
+CAN Bits corruption 4.2.1The ECR.CEL, PSR.PXE, PSR.RFDF, PSR.RBRS, PSR.RESI, PSR.DLEC and PSR.LEC bits
+can be corrupted by a debug access.X X X X
+CAN Bits corruption 4.2.2An expected clear on read of the ECR.CEL, PSR.PXE, PSR.RFDF, PSR.RBRS,
+PSR.RESI, PSR.DLEC and PSR.LEC bits can be unexpectedly filtered-out  when the
+CPU is halted.X X X X
+NVMCTRL Single ECC Errors 4.3.1When DBGECC = 0x1 or 0x3, single ECC error are unexpectedly corrected upon
+debugger reads.X X X
+NVMCTRL DBGCTRL Register Write 4.3.2 The DBGCTRL Register is only writable through debugger access. X X X X
+SERCOM DBGCTRL Register Reset 4.4.1 The DBGCTRL register is unexpectedly reset by CTRLA.SWRST X X X X
+SERCOM USART Debug Mode 4.5.1 Debug mode is not functional. X X X X
+Notes: 
+• Cells with ‘X’ indicate the issue is present in this revision of the silicon.
+• Cells with ‘-’ indicate this silicon revision does not exist for this issue.
+• The blank cell indicates the issue has been corrected or does not exist in this revision of the
+silicon.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Debug Related Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 214. PIC32CM JH00/JH01 Silicon Debug Related Errata Issues
+The following debug related errata issues apply to the PIC32CM JH00/JH01 family of devices.
+Notes: 
+• Cells with ‘X’ indicate the issue is present in this revision of the silicon.
+• Cells with ‘-’ indicate this silicon revision does not exist for this issue.
+• The blank cell indicates the issue has been corrected or does not exist in this revision of the
+silicon.
+4.1 Analog Comparator (AC)
+4.1.1 DBGCTRL Register Reset
+The AC DBGCTRL register is unexpectedly reset by CTRLA.SWRST.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+4.2 Controller Area Network (CAN)
+4.2.1 Bits c orruption
+The ECR.CEL, PSR.PXE, PSR.RFDF, PSR.RBRS, PSR.RESI, PSR.DLEC, and PSR.LEC bits can be corrupted
+by a debug access.
+Workaround
+Do not read the ECR, PSR registers with a debugger when the CPU is not halted in debug, otherwise
+debug access will clear those bits.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+4.2.2 Bits c orruption
+An expected clear on read of the ECR.CEL, PSR.PXE, PSR.RFDF, PSR.RBRS, PSR.RESI, PSR.DLEC, and
+PSR.LEC bits can be unexpectedly filtered-out  when the CPU is halted.
+Workaround
+Do not halt the CPU if other Hosts in the application are accessing the ECR or PSR registers.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+4.3 Non-V olatile  Memory Controller (NVMCTRL)
+4.3.1 Single ECC Errors Unexpectedly Corrected Upon Debugger Reads
+When DBGCTRL.DBGECC = 0x1 or 0x3, single ECC error are unexpectedly corrected upon debugger
+reads.
+
+ PIC32CM JH00/JH01
+PIC32CM JH00/JH01 Silicon Debug Related Errata Issues
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 22Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X
+4.3.2 DBGCTRL Register is Only Writable Through Debugger Access
+CPU writes to the NVMCTRL.DBGCTRL register will be discarded and generate an error.
+Workaround
+Use debugger accesses to write the register, which anyway is only meaningful while in Debug mode.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+4.4 SERCOM
+4.4.1 DBGCTRL Register Reset
+The DBGCTRL register is unexpectedly reset by CTRLA.SWRST.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+4.5 SERCOM USART
+4.5.1 Debug Mode
+In USART Operating mode if DBGCTRL.DBGSTOP = 1, data transmission is not halted after entering
+Debug mode.
+Workaround
+None.
+Aff ect ed  Silicon Revisions
+A0 B0 C0 D0
+X X X X
+
+ PIC32CM JH00/JH01
+Data Sheet Clarific ations
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 235. Data Sheet Clarific ations
+The following typographic corrections and clarifications  are to be noted for the device data sheet
+(DS60001632 G):
+Note:  Corrections in tables, registers, and text are shown in bold . Where possible, the original bold
+text formatting has been removed for clarity.
+5.1 Pinout and Packaging for 32-Pin VQFN and 32-Pin TQFP
+Pinout and Packaging information for 32-Pin VQFN and 32-Pin TQFP devices shown in table 4-1 is
+not correct. The corrected rows are shown in the following table extract
+
+ PIC32CM JH00/JH01
+Data Sheet Clarific ations
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 24
+Pin number
+rotatethispage90
+Pin NamePeripheral Functions
+Supply
+Reset stateA B C D E F G H I J KEIC
+REF
+ADCO
+ADC1
+AC
+DAC
+SERCOM
+SERCOM
+TC/TCC
+TC/TCC
+CAN (1), PDEC
+AC, GCLK
+CCL
+PDEC
+PTC
+15 PA14, XIN EXTINT[14]SERCOM2/
+PAD[2]TC4/WO[0] TCC0/WO[4] GCLK/IO[0] VDDIO I/O, HI-Z
+16 PA15, XOUT EXTINT[15]SERCOM2/
+PAD[3]TC4/WO[1] TCC0/WO[5] GCLK/IO[1] VDDIO I/O, HI-Z
+21 PA22 EXTINT[6]SERCOM3/
+PAD[0]TC0/WO[0] TCC0/WO[4] GCLK/IO[6] X[10], Y[26], DS[26] VDDIO I/O, HI-Z
+22 PA23 EXTINT[7]SERCOM3/
+PAD[1]TC0/WO[1] TCC0/WO[5] GCLK/IO[7] IN[7] X[11], Y[27], DS[27] VDDIO I/O, HI-Z
+23 PA24 EXTINT[12]SERCOM3/
+PAD[2]TC1/WO[0] TCC1/WO[2] CAN0/TX CMP[2] IN[8] VDDIO I/O, HI-Z
+24 PA25 EXTINT[13]SERCOM3/
+PAD[3]TC1/WO[1] TCC1/WO[3] CAN0/RX CMP[3] OUT[2] VDDIO I/O, HI-Z
+
+ PIC32CM JH00/JH01
+Revision History
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 256. Revision History
+Revision H - 10/2024
+Updated the entire document to reflect  Silicon Revision A0 for the PIC32CM JH001 Family of devices.
+These updates included table revisions for the following sections and their related sub-sections to
+include silicon revision A0:
+•PIC32CM JH00/JH01 Family Errata
+•Silicon Errata Summary
+•PIC32CM JH00/JH01 Silicon Errata Issues
+•Silicon Debug Related Errata Summary
+•PIC32CM JH00/JH01 Silicon Debug Related Errata Issues
+Revision G - 01/2024
+Updated the entire document to reflect  the new Silicon Revision D0.
+• Updated Table 1 and Table 2
+Revision F - 11/2023
+The following updates were performed for this revision:
+• Removed obsolete Data Sheet Clarifications
+Revision E - 03/2023
+This revision contains numerous typographical updates throughout the document along with the
+updates listed here.
+• The following Errata were added in this revision:
+–FREQM: 2.6.2 Lost Interrupt
+–FREQM: 2.6.3 STATUS.BUSY
+–SERCOM USART: 2.13.4 LIN Host Delays
+–SERCOM USART: 2.13.5 Two stop bits mode in LIN Host
+–OSC48M: 2.16.1 Start-Up
+The following Data Sheet Clarifications  were added in this revision:
+• Peripheral Touch Controller (PTC) Electrical Specifications
+• NVM User Row BOOTPROT Production Sectting
+• SERCOM4-5 Pins are not Available in PIC32CMJH00/JH01 32-PIN Variants
+Revision D - December 2022
+The silicon revision was updated throughout the document to C0.
+The following Data Sheet Clarifications  were added in this revision:
+• OSC48M Active Current Electrical Specifications
+Revision C - September 2022
+The following errata were added in this revision:
+•DEVICE: 2.4.4 Chip Erase
+Revision B - July 2022
+The following errata were added in this revision:
+•DEVICE: 2.4.3 Performance Mode
+
+ PIC32CM JH00/JH01
+Revision History
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 26The following two new chapters were added:
+•Silicon Debug Related Errata Summary
+•PIC32CM JH00/JH01 Silicon Debug Related Errata Issues
+Revision A - February 2022
+This is the initial release of this document.
+
+ PIC32CM JH00/JH01
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 27Microchip In f ormation
+The Microchip Website
+Microchip provides online support via our website at www.microchip.com/ . This website is used to
+make files and information easily available to customers. Some of the content available includes:
+•Product Support  – Data sheets and errata, application notes and sample programs, design
+resources, user’s guides and hardware support documents, latest software releases and archived
+software
+•General Technical Support  – Frequently Asked Questions (FAQs), technical support requests,
+online discussion groups, Microchip design partner program member listing
+•Business of Microchip  – Product selector and ordering guides, latest Microchip press releases,
+listing of seminars and events, listings of Microchip sales offices,  distributors and factory
+representatives
+Product Change Notific ation  Service
+Microchip’s product change notification  service helps keep customers current on Microchip
+products. Subscribers will receive email notification  whenever there are changes, updates, revisions
+or errata related to a specified  product family or development tool of interest.
+To register, go to www.microchip.com/pcn  and follow the registration instructions.
+Customer Support
+Users of Microchip products can receive assistance through several channels:
+• Distributor or Representative
+• Local Sales Office
+• Embedded Solutions Engineer (ESE)
+• Technical Support
+Customers should contact their distributor, representative or ESE for support. Local sales offices  are
+also available to help customers. A listing of sales offices  and locations is included in this document.
+Technical support is available through the website at: www.microchip.com/support
+Microchip Devices Code Pr ot ection  Feature
+Note the following details of the code protection feature on Microchip products:
+• Microchip products meet the specifications  contained in their particular Microchip Data Sheet.
+• Microchip believes that its family of products is secure when used in the intended manner, within
+operating specifications,  and under normal conditions.
+• Microchip values and aggressively protects its intellectual property rights. Attempts to breach the
+code protection features of Microchip products are strictly prohibited and may violate the Digital
+Millennium Copyright Act.
+• Neither Microchip nor any other semiconductor manufacturer can guarantee the security of its
+code. Code protection does not mean that we are guaranteeing the product is “unbreakable”.
+Code protection is constantly evolving. Microchip is committed to continuously improving the
+code protection features of our products.
+Legal Notice
+This publication and the information herein may be used only with Microchip products, including
+to design, test, and integrate Microchip products with your application. Use of this information
+in any other manner violates these terms. Information regarding device applications is provided
+only for your convenience and may be superseded by updates. It is your responsibility to ensure
+
+ PIC32CM JH00/JH01
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 28that your application meets with your specifications.  Contact your local Microchip sales office  for
+additional support or, obtain additional support at www.microchip.com/en-us/support/design-help/
+client-support-services .
+THIS INFORMATION IS PROVIDED BY MICROCHIP “AS IS”. MICROCHIP MAKES NO REPRESENTATIONS
+OR WARRANTIES OF ANY KIND WHETHER EXPRESS OR IMPLIED, WRITTEN OR ORAL, STATUTORY
+OR OTHERWISE, RELATED TO THE INFORMATION INCLUDING BUT NOT LIMITED TO ANY IMPLIED
+WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY, AND FITNESS FOR A PARTICULAR
+PURPOSE, OR WARRANTIES RELATED TO ITS CONDITION, QUALITY, OR PERFORMANCE.
+IN NO EVENT WILL MICROCHIP BE LIABLE FOR ANY INDIRECT, SPECIAL, PUNITIVE, INCIDENTAL, OR
+CONSEQUENTIAL LOSS, DAMAGE, COST, OR EXPENSE OF ANY KIND WHATSOEVER RELATED TO THE
+INFORMATION OR ITS USE, HOWEVER CAUSED, EVEN IF MICROCHIP HAS BEEN ADVISED OF THE
+POSSIBILITY OR THE DAMAGES ARE FORESEEABLE. TO THE FULLEST EXTENT ALLOWED BY LAW,
+MICROCHIP’S TOTAL LIABILITY ON ALL CLAIMS IN ANY WAY RELATED TO THE INFORMATION OR
+ITS USE WILL NOT EXCEED THE AMOUNT OF FEES, IF ANY, THAT YOU HAVE PAID DIRECTLY TO
+MICROCHIP FOR THE INFORMATION.
+Use of Microchip devices in life support and/or safety applications is entirely at the buyer’s risk,
+and the buyer agrees to defend, indemnify and hold harmless Microchip from any and all damages,
+claims, suits, or expenses resulting from such use. No licenses are conveyed, implicitly or otherwise,
+under any Microchip intellectual property rights unless otherwise stated.
+Trademarks
+The “Microchip” name and logo, the “M” logo, and other names, logos, and brands are registered
+and unregistered trademarks of Microchip Technology Incorporated or its affiliates  and/or
+subsidiaries in the United States and/or other countries (“Microchip Trademarks”). Information
+regarding Microchip Trademarks can be found at https://www.microchip.com/en-us/about/legal-
+information/microchip-trademarks .
+ISBN: 978-1-6683-0497-6
+Quality Management System
+For information regarding Microchip’s Quality Management Systems, please visit
+www.microchip.com/quality .
+
+Worldwide Sales and Service
+ Errata
+© 2024 Microchip Technology Inc. and its subsidiariesDS80001000H - 29AMERICAS ASIA/PACIFIC ASIA/PACIFIC EUROPE
+Corporate Office
+2355 West Chandler Blvd.
+Chandler, AZ 85224-6199
+Tel: 480-792-7200
+Fax: 480-792-7277
+Technical Support:
+www.microchip.com/support
+Web Address:
+www.microchip.com
+Atlanta
+Duluth, GA
+Tel: 678-957-9614
+Fax: 678-957-1455
+Austin, TX
+Tel: 512-257-3370
+Boston
+Westborough, MA
+Tel: 774-760-0087
+Fax: 774-760-0088
+Chicago
+Itasca, IL
+Tel: 630-285-0071
+Fax: 630-285-0075
+Dallas
+Addison, TX
+Tel: 972-818-7423
+Fax: 972-818-2924
+Detroit
+Novi, MI
+Tel: 248-848-4000
+Houston, TX
+Tel: 281-894-5983
+Indianapolis
+Noblesville, IN
+Tel: 317-773-8323
+Fax: 317-773-5453
+Tel: 317-536-2380
+Los Angeles
+Mission Viejo, CA
+Tel: 949-462-9523
+Fax: 949-462-9608
+Tel: 951-273-7800
+Raleigh, NC
+Tel: 919-844-7510
+New York, NY
+Tel: 631-435-6000
+San Jose, CA
+Tel: 408-735-9110
+Tel: 408-436-4270
+Canada - Toronto
+Tel: 905-695-1980
+Fax: 905-695-2078Australia - Sydney
+Tel: 61-2-9868-6733
+China - Beijing
+Tel: 86-10-8569-7000
+China - Chengdu
+Tel: 86-28-8665-5511
+China - Chongqing
+Tel: 86-23-8980-9588
+China - Dongguan
+Tel: 86-769-8702-9880
+China - Guangzhou
+Tel: 86-20-8755-8029
+China - Hangzhou
+Tel: 86-571-8792-8115
+China - Hong Kong SAR
+Tel: 852-2943-5100
+China - Nanjing
+Tel: 86-25-8473-2460
+China - Qingdao
+Tel: 86-532-8502-7355
+China - Shanghai
+Tel: 86-21-3326-8000
+China - Shenyang
+Tel: 86-24-2334-2829
+China - Shenzhen
+Tel: 86-755-8864-2200
+China - Suzhou
+Tel: 86-186-6233-1526
+China - Wuhan
+Tel: 86-27-5980-5300
+China - Xian
+Tel: 86-29-8833-7252
+China - Xiamen
+Tel: 86-592-2388138
+China - Zhuhai
+Tel: 86-756-3210040India - Bangalore
+Tel: 91-80-3090-4444
+India - New Delhi
+Tel: 91-11-4160-8631
+India - Pune
+Tel: 91-20-4121-0141
+Japan - Osaka
+Tel: 81-6-6152-7160
+Japan - Tokyo
+Tel: 81-3-6880- 3770
+Korea - Daegu
+Tel: 82-53-744-4301
+Korea - Seoul
+Tel: 82-2-554-7200
+Malaysia - Kuala Lumpur
+Tel: 60-3-7651-7906
+Malaysia - Penang
+Tel: 60-4-227-8870
+Philippines - Manila
+Tel: 63-2-634-9065
+Singapore
+Tel: 65-6334-8870
+Taiwan - Hsin Chu
+Tel: 886-3-577-8366
+Taiwan - Kaohsiung
+Tel: 886-7-213-7830
+Taiwan - Taipei
+Tel: 886-2-2508-8600
+Thailand - Bangkok
+Tel: 66-2-694-1351
+Vietnam - Ho Chi Minh
+Tel: 84-28-5448-2100Austria - Wels
+Tel: 43-7242-2244-39
+Fax: 43-7242-2244-393
+Denmark - Copenhagen
+Tel: 45-4485-5910
+Fax: 45-4485-2829
+Finland - Espoo
+Tel: 358-9-4520-820
+France - Paris
+Tel: 33-1-69-53-63-20
+Fax: 33-1-69-30-90-79
+Germany - Garching
+Tel: 49-8931-9700
+Germany - Haan
+Tel: 49-2129-3766400
+Germany - Heilbronn
+Tel: 49-7131-72400
+Germany - Karlsruhe
+Tel: 49-721-625370
+Germany - Munich
+Tel: 49-89-627-144-0
+Fax: 49-89-627-144-44
+Germany - Rosenheim
+Tel: 49-8031-354-560
+Israel - Hod Hasharon
+Tel: 972-9-775-5100
+Italy - Milan
+Tel: 39-0331-742611
+Fax: 39-0331-466781
+Italy - Padova
+Tel: 39-049-7625286
+Netherlands - Drunen
+Tel: 31-416-690399
+Fax: 31-416-690340
+Norway - Trondheim
+Tel: 47-72884388
+Poland - Warsaw
+Tel: 48-22-3325737
+Romania - Bucharest
+Tel: 40-21-407-87-50
+Spain - Madrid
+Tel: 34-91-708-08-90
+Fax: 34-91-708-08-91
+Sweden - Gothenberg
+Tel: 46-31-704-60-40
+Sweden - Stockholm
+Tel: 46-8-5090-4654
+UK - Wokingham
+Tel: 44-118-921-5800
+Fax: 44-118-921-5820
