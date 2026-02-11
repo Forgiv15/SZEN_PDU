@@ -1,0 +1,43 @@
+# Build directories
+_build/
+build/
+dist/
+out/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.ninja
+.ninja_*
+
+# Object and binary files
+*.o
+*.obj
+*.d
+*.elf
+*.hex
+*.map
+*.bin
+
+# Clangd / VSCode cache
+.cache/
+.vscode/*.log
+.vscode/*.ipch
+
+# MPLAB temporary
+*.log
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+.generated_files/
+nbproject/
+Makefile*
+Package-*
+private/
+!cmake/**/user.cmake
+cmake/**/.generated/*
+cmake/**/CMake*

@@ -1,5 +1,0 @@
-C:/Users/forgi/MPLABProjects/SZEN_PDU_0.1/_build/SZEN_PDU_0.1/default/CMakeFiles/SZEN_PDU_0_1_default_default_XC32_compile.dir
-C:/Users/forgi/MPLABProjects/SZEN_PDU_0.1/_build/SZEN_PDU_0.1/default/CMakeFiles/SZEN_PDU_0_1_default_image_gPQ6L7Jj.dir
-C:/Users/forgi/MPLABProjects/SZEN_PDU_0.1/_build/SZEN_PDU_0.1/default/CMakeFiles/SZEN_PDU_0_1_default_Bin2Hex.dir
-C:/Users/forgi/MPLABProjects/SZEN_PDU_0.1/_build/SZEN_PDU_0.1/default/CMakeFiles/edit_cache.dir
-C:/Users/forgi/MPLABProjects/SZEN_PDU_0.1/_build/SZEN_PDU_0.1/default/CMakeFiles/rebuild_cache.dir
