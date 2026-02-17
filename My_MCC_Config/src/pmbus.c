@@ -31,7 +31,7 @@ pmbus_status_t pmbus_send_byte(uint8_t addr, uint8_t command)
 {
     uint8_t tx[2];
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);  /* Write address = 7-bit addr shifted left */
 
     /* Calculate PEC over: slave address (write) + command */
     crc = pmbus_crc8_update(crc, addr_w);
@@ -53,7 +53,7 @@ pmbus_status_t pmbus_write_byte(uint8_t addr, uint8_t command, uint8_t data)
 {
     uint8_t tx[3];
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);  /* Write address = 7-bit addr shifted left */
 
     /* Calculate PEC over: slave address (write) + command + data */
     crc = pmbus_crc8_update(crc, addr_w);
@@ -77,7 +77,7 @@ pmbus_status_t pmbus_write_word(uint8_t addr, uint8_t command, uint16_t data)
 {
     uint8_t tx[4];
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);  /* Write address = 7-bit addr shifted left */
     uint8_t data_lo = (uint8_t)(data & 0xFFU);
     uint8_t data_hi = (uint8_t)((data >> 8U) & 0xFFU);
 
@@ -105,8 +105,8 @@ pmbus_status_t pmbus_read_byte(uint8_t addr, uint8_t command, uint8_t *out)
 {
     uint8_t rx[2];  /* data byte + PEC */
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
-    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);        /* Write address */
+    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U); /* Read address */
 
     /* Send command byte */
     if (!SERCOM1_I2C_Write(addr, &command, 1U)) {
@@ -148,8 +148,8 @@ pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out)
 {
     uint8_t rx[3];  /* data_lo + data_hi + PEC */
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
-    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);        /* Write address */
+    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U); /* Read address */
 
     /* Send command byte */
     if (!SERCOM1_I2C_Write(addr, &command, 1U)) {

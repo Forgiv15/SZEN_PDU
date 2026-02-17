@@ -31,6 +31,25 @@ static const uint8_t tps_addr[PDU_NUM_EFUSES] =
 /* Power calculation tolerance (50% - very lenient for sanity check) */
 #define POWER_CHECK_TOLERANCE   0.5f
 
+/* Delay loop count for FET state change (~1ms at typical CPU speed) */
+#define FET_STATE_DELAY_COUNT   10000UL
+
+/**
+ * @brief Software delay using busy-wait loop
+ * 
+ * Note: This is a simple busy-wait delay. For production code, consider
+ * using SYSTICK_DelayMs() or other timer-based delays for better CPU utilization.
+ * 
+ * @param count Number of iterations to delay
+ */
+static void delay_loop(uint32_t count)
+{
+    volatile uint32_t i;
+    for (i = 0U; i < count; i++) {
+        /* Busy wait - prevents compiler optimization */
+    }
+}
+
 /**
  * @brief Check if all eFuses have input voltage above threshold
  * 
@@ -124,11 +143,8 @@ static bool check_fet_all(void)
             return false;
         }
 
-        /* Small delay for FET state change - using busy-wait for now */
-        volatile uint32_t delay;
-        for (delay = 0U; delay < 10000UL; delay++) {
-            /* Wait */
-        }
+        /* Delay for FET state change */
+        delay_loop(FET_STATE_DELAY_COUNT);
 
         /* Read STATUS_BYTE to verify FET is OFF */
         if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK) {
@@ -145,10 +161,8 @@ static bool check_fet_all(void)
             return false;
         }
 
-        /* Small delay for FET state change */
-        for (delay = 0U; delay < 10000UL; delay++) {
-            /* Wait */
-        }
+        /* Delay for FET state change */
+        delay_loop(FET_STATE_DELAY_COUNT);
 
         /* Read STATUS_BYTE to verify FET is ON */
         if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK) {
