@@ -40,4 +40,4 @@ Package-*
 private/
 !cmake/**/user.cmake
 cmake/**/.generated/*
-cmake/**/CMake*
+cmake/**/CMake*_codeql*
