@@ -27,5 +27,132 @@ data:
         type: ElementPosition
       type: ElementPositions
     type: ComponentGraph
-  symbols: {}
+  symbols:
+    instHeaderFile:
+      attributes:
+        id: instHeaderFile
+      children:
+      - children:
+        - attributes:
+            id: source
+          children:
+          - type: Value
+            value: ../peripheral/can_u2003/templates/plib_can.h.ftl
+          type: String
+        type: Attributes
+      type: File
+    sourceFile:
+      attributes:
+        id: sourceFile
+      children:
+      - children:
+        - attributes:
+            id: source
+          children:
+          - type: Value
+            value: ../peripheral/can_u2003/templates/plib_can.c.ftl
+          type: String
+        type: Attributes
+      type: File
+    INTERRUPT_MODE:
+      attributes:
+        id: INTERRUPT_MODE
+      children:
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    RXBUF_USE:
+      attributes:
+        id: RXBUF_USE
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    RXF0_WATERMARK:
+      attributes:
+        id: RXF0_WATERMARK
+      children:
+      - children:
+        - attributes:
+            id: can0
+            value: '0'
+          type: Dynamic
+        type: Values
+      type: Integer
+    RXF0_ELEMENTS:
+      attributes:
+        id: RXF0_ELEMENTS
+      children:
+      - children:
+        - attributes:
+            value: '16'
+          type: User
+        type: Values
+      type: Integer
+    RXF1_WATERMARK:
+      attributes:
+        id: RXF1_WATERMARK
+      children:
+      - children:
+        - attributes:
+            id: can0
+            value: '0'
+          type: Dynamic
+        type: Values
+      type: Integer
+    RXF1_ELEMENTS:
+      attributes:
+        id: RXF1_ELEMENTS
+      children:
+      - children:
+        - attributes:
+            value: '16'
+          type: User
+        type: Values
+      type: Integer
+    RX_BUFFER_ELEMENTS:
+      attributes:
+        id: RX_BUFFER_ELEMENTS
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: '16'
+          type: User
+        type: Values
+      type: Integer
+    TX_FIFO_WATERMARK:
+      attributes:
+        id: TX_FIFO_WATERMARK
+      children:
+      - children:
+        - attributes:
+            id: can0
+            value: '0'
+          type: Dynamic
+        type: Values
+      type: Integer
+    TX_FIFO_ELEMENTS:
+      attributes:
+        id: TX_FIFO_ELEMENTS
+      children:
+      - children:
+        - attributes:
+            value: '16'
+          type: User
+        type: Values
+      type: Integer
   userData: {}

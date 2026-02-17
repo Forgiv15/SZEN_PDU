@@ -28,7 +28,8 @@ compile_commands.json
 
 # MPLAB temporary
 *.log
-
+nbproject/private/
+*.xml
 # OS junk
 Thumbs.db
 .DS_Store

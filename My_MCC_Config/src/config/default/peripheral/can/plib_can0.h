@@ -77,16 +77,18 @@
 
 /* CAN0 Message RAM Configuration Size */
 #define CAN0_RX_FIFO0_ELEMENT_SIZE       16U
-#define CAN0_RX_FIFO0_SIZE               16U
+#define CAN0_RX_FIFO0_SIZE               256U
 #define CAN0_RX_FIFO1_ELEMENT_SIZE       16U
-#define CAN0_RX_FIFO1_SIZE               16U
+#define CAN0_RX_FIFO1_SIZE               256U
+#define CAN0_RX_BUFFER_ELEMENT_SIZE      16U
+#define CAN0_RX_BUFFER_SIZE              256U
 #define CAN0_TX_FIFO_BUFFER_ELEMENT_SIZE 16U
-#define CAN0_TX_FIFO_BUFFER_SIZE         16U
-#define CAN0_TX_EVENT_FIFO_SIZE          8U
+#define CAN0_TX_FIFO_BUFFER_SIZE         256U
+#define CAN0_TX_EVENT_FIFO_SIZE          128U
 
 /* CAN0_MESSAGE_RAM_CONFIG_SIZE to be used by application or driver
    for allocating buffer from non-cached contiguous memory */
-#define CAN0_MESSAGE_RAM_CONFIG_SIZE     56U
+#define CAN0_MESSAGE_RAM_CONFIG_SIZE     1152U
 
 // *****************************************************************************
 // *****************************************************************************
@@ -99,6 +101,8 @@ uint8_t CAN0_TxFifoFreeLevelGet(void);
 bool CAN0_TxBufferIsBusy(uint8_t bufferNumber);
 bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFifo);
 uint8_t CAN0_TxEventFifoFillLevelGet(void);
+bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer);
+bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber);
 bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage, CAN_RX_BUFFER *rxBuffer);
 uint8_t CAN0_RxFifoFillLevelGet(CAN_RX_FIFO_NUM rxFifoNum);
 CAN_ERROR CAN0_ErrorGet(void);

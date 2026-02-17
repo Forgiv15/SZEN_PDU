@@ -168,15 +168,15 @@ void SYS_Initialize ( void* data )
 
     EVSYS_Initialize();
 
-
-    ADC0_Initialize();
     CAN1_Initialize();
 
-	SYSTICK_TimerInitialize();
-    CAN0_Initialize();
 
+    ADC0_Initialize();
+	SYSTICK_TimerInitialize();
 
     ADC1_Initialize();
+    CAN0_Initialize();
+
     TC0_TimerInitialize();
 
 

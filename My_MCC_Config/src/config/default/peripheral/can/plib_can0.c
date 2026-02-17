@@ -98,6 +98,11 @@ void CAN0_Initialize(void)
     /* Set Nominal Bit timing and Prescaler Register */
     CAN0_REGS->CAN_NBTP  = CAN_NBTP_NTSEG2(23UL) | CAN_NBTP_NTSEG1(70UL) | CAN_NBTP_NBRP(0UL) | CAN_NBTP_NSJW(23UL);
 
+    /*lint -e{9048} PC lint incorrectly reports a missing 'U' Suffix */
+    CAN0_REGS->CAN_NDAT1 = CAN_NDAT1_Msk;
+    /*lint -e{9048} PC lint incorrectly reports a missing 'U' Suffix */
+    CAN0_REGS->CAN_NDAT2 = CAN_NDAT2_Msk;
+
 
     /* Global Filter Configuration Register */
     CAN0_REGS->CAN_GFC = CAN_GFC_ANFS_REJECT | CAN_GFC_ANFE_REJECT;
@@ -143,7 +148,7 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
     uint8_t  count = 0U;
     bool transmitFifo_event = false;
 
-    if (!(((numberOfMessage < 1U) || (numberOfMessage > 1U)) || (txBuffer == NULL)))
+    if (!(((numberOfMessage < 1U) || (numberOfMessage > 16U)) || (txBuffer == NULL)))
     {
 
         tfqpi = (uint8_t)((CAN0_REGS->CAN_TXFQS & CAN_TXFQS_TFQPI_Msk) >> CAN_TXFQS_TFQPI_Pos);
@@ -157,7 +162,7 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
             txBuf += CAN0_TX_FIFO_BUFFER_ELEMENT_SIZE;
             bufferNumber |= (1UL << tfqpi);
             tfqpi++;
-            if (tfqpi == 1U)
+            if (tfqpi == 16U)
             {
                 tfqpi = 0U;
             }
@@ -259,7 +264,7 @@ bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFif
             }
             txEvtFifo += sizeof(CAN_TX_EVENT_FIFO);
             txefgi++;
-            if (txefgi == 1U)
+            if (txefgi == 16U)
             {
                 txefgi = 0U;
             }
@@ -294,6 +299,82 @@ uint8_t CAN0_TxEventFifoFillLevelGet(void)
     return (uint8_t)(CAN0_REGS->CAN_TXEFS & CAN_TXEFS_EFFL_Msk);
 }
 
+// *****************************************************************************
+/* Function:
+    bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer)
+
+   Summary:
+    Read a message from the specific Rx Buffer.
+
+   Precondition:
+    CAN0_Initialize must have been called for the associated CAN instance.
+
+   Parameters:
+    bufferNumber - Rx buffer number
+    rxBuffer     - Pointer to Rx buffer
+
+   Returns:
+    Request status.
+    true  - Request was successful.
+    false - Request has failed.
+*/
+bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer)
+{
+    uint8_t *rxBuf = NULL;
+    bool message_receive_event = false;
+
+    if((rxBuffer != NULL) && (bufferNumber < 16U))
+    {
+        rxBuf = (uint8_t *) ((uint8_t *)can0Obj.msgRAMConfig.rxBuffersAddress + ((uint32_t)bufferNumber * CAN0_RX_BUFFER_ELEMENT_SIZE));
+
+        (void) memcpy((uint8_t *)rxBuffer, rxBuf, CAN0_RX_BUFFER_ELEMENT_SIZE);
+
+        /* Clear new data flag */
+        CAN0_REGS->CAN_NDAT1 = (1UL << bufferNumber);
+        message_receive_event = true;
+    }
+    return message_receive_event;
+}
+
+// *****************************************************************************
+/* Function:
+    bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber)
+
+   Summary:
+    Get Rx Buffer Number.
+
+   Precondition:
+    CAN0_Initialize must have been called for the associated CAN instance.
+
+   Parameters:
+    None.
+
+   Returns:
+    Request status.
+    true  - Request was successful.
+    false - Request has failed.
+*/
+bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber)
+{
+    bool     status = false;
+    uint8_t  bufferNum = 0U;
+    uint32_t newData1 = CAN0_REGS->CAN_NDAT1;
+
+    if (newData1 != 0U)
+    {
+        for (bufferNum = 0U; bufferNum < 16U; bufferNum++)
+        {
+            if ((newData1 & (1UL << bufferNum)) == (1UL << bufferNum))
+            {
+                *bufferNumber = bufferNum;
+                status = true;
+                break;
+            }
+        }
+    }
+
+    return status;
+}
 
 // *****************************************************************************
 /* Function:
@@ -342,7 +423,7 @@ bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage,
                     }
                     rxBuf += CAN0_RX_FIFO0_ELEMENT_SIZE;
                     rxgi++;
-                    if (rxgi == 1U)
+                    if (rxgi == 16U)
                     {
                         rxgi = 0U;
                     }
@@ -368,7 +449,7 @@ bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage,
                     }
                     rxBuf += CAN0_RX_FIFO1_ELEMENT_SIZE;
                     rxgi++;
-                    if (rxgi == 1U)
+                    if (rxgi == 16U)
                     {
                         rxgi = 0U;
                     }
@@ -538,7 +619,7 @@ void CAN0_InterruptClear(CAN_INTERRUPT_MASK interruptMask)
    Returns:
     None
 */
-/* MISRA C-2012 Rule 11.3 violated 4 times below. Deviation record ID - H3_MISRAC_2012_R_11_3_DR_1*/
+/* MISRA C-2012 Rule 11.3 violated 5 times below. Deviation record ID - H3_MISRAC_2012_R_11_3_DR_1*/
 void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
 {
     uint32_t offset = 0U;
@@ -559,25 +640,29 @@ void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
     can0Obj.msgRAMConfig.rxFIFO0Address = (can_rxf0e_registers_t *)msgRAMConfigBaseAddr;
     offset = CAN0_RX_FIFO0_SIZE;
     /* Receive FIFO 0 Configuration Register */
-    CAN0_REGS->CAN_RXF0C = CAN_RXF0C_F0S(1UL) | CAN_RXF0C_F0WM(0UL) | CAN_RXF0C_F0OM_Msk |
+    CAN0_REGS->CAN_RXF0C = CAN_RXF0C_F0S(16UL) | CAN_RXF0C_F0WM(0UL) | CAN_RXF0C_F0OM_Msk |
             CAN_RXF0C_F0SA((uint32_t)can0Obj.msgRAMConfig.rxFIFO0Address);
 
     can0Obj.msgRAMConfig.rxFIFO1Address = (can_rxf1e_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_RX_FIFO1_SIZE;
     /* Receive FIFO 1 Configuration Register */
-    CAN0_REGS->CAN_RXF1C = CAN_RXF1C_F1S(1UL) | CAN_RXF1C_F1WM(0UL) | CAN_RXF1C_F1OM_Msk |
+    CAN0_REGS->CAN_RXF1C = CAN_RXF1C_F1S(16UL) | CAN_RXF1C_F1WM(0UL) | CAN_RXF1C_F1OM_Msk |
             CAN_RXF1C_F1SA((uint32_t)can0Obj.msgRAMConfig.rxFIFO1Address);
+
+    can0Obj.msgRAMConfig.rxBuffersAddress = (can_rxbe_registers_t *)(msgRAMConfigBaseAddr + offset);
+    offset += CAN0_RX_BUFFER_SIZE;
+    CAN0_REGS->CAN_RXBC = CAN_RXBC_RBSA((uint32_t)can0Obj.msgRAMConfig.rxBuffersAddress);
 
     can0Obj.msgRAMConfig.txBuffersAddress = (can_txbe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_TX_FIFO_BUFFER_SIZE;
     /* Transmit Buffer/FIFO Configuration Register */
-    CAN0_REGS->CAN_TXBC = CAN_TXBC_TFQS(1UL) |
+    CAN0_REGS->CAN_TXBC = CAN_TXBC_TFQS(16UL) |
             CAN_TXBC_TBSA((uint32_t)can0Obj.msgRAMConfig.txBuffersAddress);
 
     can0Obj.msgRAMConfig.txEventFIFOAddress =  (can_txefe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_TX_EVENT_FIFO_SIZE;
     /* Transmit Event FIFO Configuration Register */
-    CAN0_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(1UL) |
+    CAN0_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(16UL) |
             CAN_TXEFC_EFSA((uint32_t)can0Obj.msgRAMConfig.txEventFIFOAddress);
 
 
