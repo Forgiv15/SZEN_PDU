@@ -170,15 +170,17 @@ void SYS_Initialize ( void* data )
 
     CAN1_Initialize();
 
-
-    ADC0_Initialize();
 	SYSTICK_TimerInitialize();
-
-    ADC1_Initialize();
     CAN0_Initialize();
+
+    EIC_Initialize();
 
     TC0_TimerInitialize();
 
+
+    ADC0_Initialize();
+
+    ADC1_Initialize();
 
     NVIC_Initialize();
 

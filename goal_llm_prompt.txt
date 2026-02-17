@@ -1,0 +1,291 @@
+============================================================
+FORMULA STUDENT PDU FIRMWARE SPECIFICATION
+PIC32CM5164JH01 + 8× TPS25990
+LLM / AI FRIENDLY VERSION
+============================================================
+============================================================
+1. SYSTEM OVERVIEW
+============================================================
+
+This project implements a system-critical Power Distribution Unit (PDU)
+for a Formula Student vehicle.
+
+Microcontroller:
+PIC32CM5164JH01 (ARM Cortex-M23)
+
+Protected Outputs:
+8 × TPS25990 PMBus eFuse devices
+
+Communication:
+CAN telemetry (structured, fixed format)
+
+Primary Goals:
+- Reliable voltage monitoring
+- Reliable current monitoring
+- Power consistency validation
+- FET driver validation
+- Full STATUS_WORD decoding
+- Deterministic operation
+- ISO C99 compliant firmware
+- No undefined behavior
+- No implicit declarations
+- No dynamic memory
+
+============================================================
+2. HARDWARE ARCHITECTURE
+============================================================
+Microcontroller Responsibilities
+
+• PMBus master via SERCOM I²C
+• PEC (CRC8 polynomial 0x07) enabled
+• ADC 12-bit shunt measurement
+• CAN transmission
+• Interrupt-based FLT pin handling
+• Watchdog supervision
+• Status LED control
+• Deterministic scheduling
+
+TPS25990 Devices (8 channels)
+
+Each eFuse provides:
+
+• READ_VOUT
+• READ_IOUT
+• READ_PIN
+• STATUS_BYTE
+• STATUS_WORD (16-bit)
+• OPERATION control
+• CLEAR_FAULTS
+• Manufacturer status registers
+
+Channel Mapping Example:
+
++-------+---------+-------------+
+| Index | Address | Function |
++-------+---------+-------------+
+| 0 | 0x45 | Hybrid |
+| 1 | 0x48 | Vent1 |
+| 2 | 0x43 | Vent2 |
+| 3 | 0x40 | IGN |
+| 4 | 0x51 | Fuel |
+| 5 | 0x41 | WP1 |
+| 6 | 0x46 | WP2 |
+| 7 | 0x50 | 12V |
++-------+---------+-------------+
+
+============================================================
+3. PMBUS DATA HANDLING
+============================================================
+Linear11 Format (16-bit signed)
+
+Used for:
+• Voltage
+• Current
+• Power
+
+Structure:
+- 5-bit exponent
+- 11-bit mantissa
+
+Firmware must:
+- Decode to float for validation logic
+- Convert to scaled integer for CAN
+
+PMBus Commands Used
+
++-------------------------+--------+
+| Command | Code |
++-------------------------+--------+
+| OPERATION | 0x01 |
+| CLEAR_FAULTS | 0x03 |
+| STATUS_BYTE | 0x78 |
+| STATUS_WORD | 0x79 |
+| READ_VIN | 0x88 |
+| READ_IIN | 0x89 |
+| READ_VOUT | 0x8B |
+| READ_TEMPERATURE_1 | 0x8D |
+| READ_PIN | 0x97 |
++-------------------------+--------+
+
+PEC must be verified on all reads.
+
+============================================================
+4. STATUS_WORD DEFINITION (TPS25990)
+============================================================
+
+STATUS_WORD = 16-bit register (Command 0x79)
+
+Upper Byte (Bits 15–8)
+
++-----+----------------+
+| Bit | Meaning |
++-----+----------------+
+| 15 | OUT_STATUS |
+| 14 | IOUT_STATUS |
+| 13 | INPUT_STATUS |
+| 12 | MFR_STATUS |
+| 11 | PGOODB |
+| 10 | Reserved |
+| 9 | Reserved |
+| 8 | UNKNOWN |
++-----+----------------+
+
+Lower Byte (Bits 7–0)
+
++-----+----------------+
+| Bit | Meaning |
++-----+----------------+
+| 7 | BUSY |
+| 6 | FET_OFF |
+| 5 | Reserved |
+| 4 | Reserved |
+| 3 | VIN_UV_FLT |
+| 2 | TEMP_FLT |
+| 1 | CML_ERR |
+| 0 | OTHER |
++-----+----------------+
+
+Firmware must provide:
+- Bit-accurate decoding
+- Structured representation
+- Logical fault evaluation
+
+============================================================
+5. CAN TELEMETRY STRUCTURE
+============================================================
+Per-eFuse Telemetry (0x500–0x507)
+
+8 bytes per frame:
+
++--------+----------------------------+
+| Bytes | Meaning |
++--------+----------------------------+
+| 0–1 | Voltage (mV, uint16) |
+| 2–3 | Current (mA, uint16) |
+| 4–5 | Power (10mW units, uint16) |
+| 6–7 | STATUS_WORD (uint16) |
++--------+----------------------------+
+
+MCU Telemetry (0x520)
+
+8 bytes:
+
++--------+-----------------------------+
+| Bytes | Meaning |
++--------+-----------------------------+
+| 0 | FLT pins bitmap |
+| 1 | System state flags |
+| 2–3 | Shunt current (mA) |
+| 4–7 | Reserved |
++--------+-----------------------------+
+
+CAN frames are fixed-length and deterministic.
+
+============================================================
+6. FUNCTIONAL VALIDATION LOGIC
+============================================================
+A. Voltage Validation
+
+For each eFuse:
+- Read READ_VOUT
+- Decode Linear11
+- Verify voltage > 11.0V
+
+If any fail:
+→ Green LED blinking
+Else:
+→ Green LED solid
+
+B. Power Consistency Validation
+
+For each eFuse:
+
+V = READ_VOUT
+I = READ_IOUT
+P_measured = READ_PIN
+
+P_calc = V × I
+Error = abs(P_calc − P_measured)
+
+
+If error exceeds tolerance:
+→ Blue LED blinking
+Else:
+→ Blue LED solid
+
+C. FET Driver Validation
+
+For each eFuse:
+
+OPERATION = OFF
+
+Confirm STATUS_WORD.FET_OFF = 1
+
+OPERATION = ON
+
+Confirm STATUS_WORD.FET_OFF = 0
+
+If mismatch:
+→ Red LED blinking
+Else:
+→ Red LED solid
+
+D. FLT Pins
+
+• Two hardware FLT pins
+• Handled via interrupt
+• Reported via CAN
+• Must be latched until cleared
+
+============================================================
+7. RELIABILITY REQUIREMENTS
+============================================================
+
+Mandatory constraints:
+
+• ISO C99 compliant
+• No dynamic allocation
+• No implicit declarations
+• No blocking delays in main loop
+• Timeouts on all I²C transactions
+• PEC verified
+• Deterministic scheduler
+• Watchdog integrated
+• Clear error return types
+• No hidden side effects
+
+============================================================
+8. FUTURE DEVELOPMENT (FIRMWARE CORE ONLY)
+============================================================
+
+• Implement CLEAR_FAULTS logic
+• Implement STATUS_OUT decoding
+• Implement STATUS_IOUT decoding
+• Implement STATUS_INPUT decoding
+• Implement STATUS_TEMP decoding
+• Implement STATUS_MFR_SPECIFIC decoding
+• Add EEPROM configuration storage
+• Add fault latching system
+• Add startup self-test sequence
+• Add repeated-fault shutdown logic
+• Add brownout detection handling
+
+============================================================
+9. AI / LLM PROMPT STARTER
+============================================================
+
+Use this when starting future sessions:
+
+I am developing a system-critical Formula Student PDU using
+PIC32CM5164JH01 and 8× TPS25990 PMBus eFuses.
+The firmware must be ISO C99 compliant and deterministic.
+It must decode Linear11 values, read full STATUS_WORD (0x79),
+validate voltage, validate power consistency, verify FET driver
+operation, monitor FLT pins via interrupt, and transmit structured
+CAN telemetry. PEC must be used for all PMBus transactions.
+No dynamic memory. No implicit declarations.
+Please operate at embedded-systems expert level.
+
+============================================================
+END OF SPECIFICATION
+============================================================

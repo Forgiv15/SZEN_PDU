@@ -37,7 +37,7 @@ data:
             id: source
           children:
           - type: Value
-            value: ../peripheral/can_u2003/templates/plib_can.h.ftl
+            value: ../peripheral/can_u2003/templates/plib_can_interrupt.h.ftl
           type: String
         type: Attributes
       type: File
@@ -50,7 +50,7 @@ data:
             id: source
           children:
           - type: Value
-            value: ../peripheral/can_u2003/templates/plib_can.c.ftl
+            value: ../peripheral/can_u2003/templates/plib_can_interrupt.c.ftl
           type: String
         type: Attributes
       type: File
@@ -60,7 +60,7 @@ data:
       children:
       - children:
         - attributes:
-            value: 'false'
+            value: 'true'
           type: User
         type: Values
       type: Boolean

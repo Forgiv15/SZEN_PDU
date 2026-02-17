@@ -27,5 +27,41 @@ data:
         type: ElementPosition
       type: ElementPositions
     type: ComponentGraph
-  symbols: {}
+  symbols:
+    instHeaderFile:
+      attributes:
+        id: instHeaderFile
+      children:
+      - children:
+        - attributes:
+            id: source
+          children:
+          - type: Value
+            value: ../peripheral/can_u2003/templates/plib_can_interrupt.h.ftl
+          type: String
+        type: Attributes
+      type: File
+    sourceFile:
+      attributes:
+        id: sourceFile
+      children:
+      - children:
+        - attributes:
+            id: source
+          children:
+          - type: Value
+            value: ../peripheral/can_u2003/templates/plib_can_interrupt.c.ftl
+          type: String
+        type: Attributes
+      type: File
+    INTERRUPT_MODE:
+      attributes:
+        id: INTERRUPT_MODE
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
   userData: {}

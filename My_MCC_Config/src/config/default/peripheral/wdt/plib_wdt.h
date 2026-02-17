@@ -1,27 +1,23 @@
 /*******************************************************************************
-  CAN Peripheral Library Interface Header File
+  Watch Dog Timer PLIB.
 
   Company:
     Microchip Technology Inc.
 
   File Name:
-    plib_can1.h
+    plib_wdt.h
 
   Summary:
-    CAN PLIB interface declarations.
+    Interface definition of WDT PLIB.
 
   Description:
-    The CAN plib provides a simple interface to manage the CAN modules on
-    Microchip microcontrollers. This file defines the interface declarations
-    for the CAN plib.
-
-  Remarks:
-    None.
-
+    This file defines the interface for the WDT Plib.
+    It allows user to setup timeout duration and restart watch dog timer.
 *******************************************************************************/
-//DOM-IGNORE-BEGIN
+
+// DOM-IGNORE-BEGIN
 /*******************************************************************************
-* Copyright (C) 2021 Microchip Technology Inc. and its subsidiaries.
+* Copyright (C) 2018 Microchip Technology Inc. and its subsidiaries.
 *
 * Subject to your compliance with these terms, you may use Microchip software
 * and any derivatives exclusively with Microchip products. It is your
@@ -42,10 +38,10 @@
 * ANY WAY RELATED TO THIS SOFTWARE WILL NOT EXCEED THE AMOUNT OF FEES, IF ANY,
 * THAT YOU HAVE PAID DIRECTLY TO MICROCHIP FOR THIS SOFTWARE.
 *******************************************************************************/
-//DOM-IGNORE-END
+// DOM-IGNORE-END
 
-#ifndef PLIB_CAN1_H
-#define PLIB_CAN1_H
+#ifndef PLIB_WDT_H    // Guards against multiple inclusion
+#define PLIB_WDT_H
 
 // *****************************************************************************
 // *****************************************************************************
@@ -53,18 +49,16 @@
 // *****************************************************************************
 // *****************************************************************************
 
-/*
- * This section lists the other files that are included in this file.
- */
+#include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
-
+#include <stddef.h>
 #include "device.h"
-#include "plib_can_common.h"
 
 // DOM-IGNORE-BEGIN
-#ifdef __cplusplus  // Provide C++ Compatibility
+#ifdef __cplusplus // Provide C++ Compatibility
+
     extern "C" {
+
 #endif
 // DOM-IGNORE-END
 
@@ -73,51 +67,41 @@
 // Section: Data Types
 // *****************************************************************************
 // *****************************************************************************
-#define CAN1_CLOCK_FREQUENCY    48000000U
 
-/* CAN1 Message RAM Configuration Size */
-#define CAN1_RX_FIFO0_ELEMENT_SIZE       16U
-#define CAN1_RX_FIFO0_SIZE               16U
-#define CAN1_RX_FIFO1_ELEMENT_SIZE       16U
-#define CAN1_RX_FIFO1_SIZE               16U
-#define CAN1_TX_FIFO_BUFFER_ELEMENT_SIZE 16U
-#define CAN1_TX_FIFO_BUFFER_SIZE         16U
-#define CAN1_TX_EVENT_FIFO_SIZE          8U
-
-/* CAN1_MESSAGE_RAM_CONFIG_SIZE to be used by application or driver
-   for allocating buffer from non-cached contiguous memory */
-#define CAN1_MESSAGE_RAM_CONFIG_SIZE     56U
 
 // *****************************************************************************
 // *****************************************************************************
 // Section: Interface Routines
 // *****************************************************************************
 // *****************************************************************************
-void CAN1_Initialize(void);
-bool CAN1_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer);
-uint8_t CAN1_TxFifoFreeLevelGet(void);
-bool CAN1_TxBufferIsBusy(uint8_t bufferNumber);
-bool CAN1_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFifo);
-bool CAN1_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage, CAN_RX_BUFFER *rxBuffer);
-CAN_ERROR CAN1_ErrorGet(void);
-void CAN1_ErrorCountGet(uint8_t *txErrorCount, uint8_t *rxErrorCount);
-void CAN1_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress);
-void CAN1_SleepModeEnter(void);
-void CAN1_SleepModeExit(void);
-bool CAN1_BitTimingCalculationGet(CAN_BIT_TIMING_SETUP *setup, CAN_BIT_TIMING *bitTiming);
-bool CAN1_BitTimingSet(CAN_BIT_TIMING *bitTiming);
-void CAN1_TxFifoCallbackRegister(CAN_TX_FIFO_CALLBACK callback, uintptr_t contextHandle);
-void CAN1_TxEventFifoCallbackRegister(CAN_TX_EVENT_FIFO_CALLBACK callback, uintptr_t contextHandle);
-void CAN1_RxFifoCallbackRegister(CAN_RX_FIFO_NUM rxFifoNum, CAN_RX_FIFO_CALLBACK callback, uintptr_t contextHandle);
-void CAN1_CallbackRegister(CAN_CALLBACK callback, uintptr_t contextHandle);
+
+void WDT_Enable( void );
+
+void WDT_Disable( void );
+
+void WDT_EnableWindowMode( void );
+
+void WDT_DisableWindowMode( void );
+
+bool WDT_IsEnabled(void);
+
+bool WDT_IsAlwaysOn(void);
+
+bool WDT_IsWindowModeEnabled(void);
+
+void WDT_TimeoutPeriodSet(uint8_t TimeoutPeriod);
+
+void WDT_Clear( void );
+
+void WDT_ClearWithSync( void );
+
+
 // DOM-IGNORE-BEGIN
 #ifdef __cplusplus  // Provide C++ Compatibility
+
     }
+
 #endif
 // DOM-IGNORE-END
 
-#endif // PLIB_CAN1_H
-
-/*******************************************************************************
- End of File
-*/
+#endif /* PLIB_WDT_H */

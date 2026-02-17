@@ -2716,7 +2716,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO_FLTM
+            value: FLTM
           type: User
         type: Values
       type: String
@@ -2726,7 +2726,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: EIC_EXTINT14
           type: User
         type: Values
       type: String
@@ -2756,7 +2756,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: A
           type: User
         type: Values
       type: String
@@ -2766,7 +2766,7 @@ data:
       children:
       - children:
         - attributes:
-            value: ''
+            value: 'True'
           type: User
         type: Values
       type: String
@@ -2826,7 +2826,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO_FLT
+            value: FLT
           type: User
         type: Values
       type: String
@@ -2836,7 +2836,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: EIC_EXTINT15
           type: User
         type: Values
       type: String
@@ -2866,7 +2866,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: A
           type: User
         type: Values
       type: String
@@ -2876,7 +2876,7 @@ data:
       children:
       - children:
         - attributes:
-            value: ''
+            value: 'True'
           type: User
         type: Values
       type: String
@@ -2896,7 +2896,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO_SDC_IN
+            value: SDC
           type: User
         type: Values
       type: String
@@ -2906,7 +2906,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: EIC_EXTINT0
           type: User
         type: Values
       type: String
@@ -2946,7 +2946,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: A
           type: User
         type: Values
       type: String
@@ -2976,7 +2976,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO_BSPD_IN
+            value: BSPD
           type: User
         type: Values
       type: String
@@ -2986,7 +2986,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: EIC_EXTINT1
           type: User
         type: Values
       type: String
@@ -3026,7 +3026,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: A
           type: User
         type: Values
       type: String
@@ -3056,7 +3056,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO_BOTS_IN
+            value: BOTS
           type: User
         type: Values
       type: String
@@ -3066,7 +3066,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: EIC_EXTINT2
           type: User
         type: Values
       type: String
@@ -3106,7 +3106,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: A
           type: User
         type: Values
       type: String
@@ -3136,7 +3136,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO_INERTIA_IN
+            value: INERTIA
           type: User
         type: Values
       type: String
@@ -3146,7 +3146,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: EIC_EXTINT3
           type: User
         type: Values
       type: String
@@ -3186,7 +3186,7 @@ data:
       children:
       - children:
         - attributes:
-            value: GPIO
+            value: A
           type: User
         type: Values
       type: String
@@ -4409,7 +4409,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x43b00f'
+            value: '0xc043b00f'
           type: Dynamic
         type: Values
       type: String
@@ -4662,7 +4662,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x6'
+            value: '0x7'
           type: Dynamic
         type: Values
       type: String
@@ -4673,7 +4673,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x6'
+            value: '0x7'
           type: Dynamic
         type: Values
       type: String
@@ -4772,7 +4772,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x6'
+            value: '0x7'
           type: Dynamic
         type: Values
       type: String
@@ -4805,7 +4805,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x6'
+            value: '0x7'
           type: Dynamic
         type: Values
       type: String
@@ -4816,7 +4816,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x2'
+            value: '0x7'
           type: Dynamic
         type: Values
       type: String
@@ -4827,7 +4827,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: '0x2'
+            value: '0x7'
           type: Dynamic
         type: Values
       type: String
@@ -5494,7 +5494,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: 'false'
+            value: 'true'
           type: Dynamic
         - attributes:
             value: 'true'
@@ -5508,7 +5508,7 @@ data:
       - children:
         - attributes:
             id: can0
-            value: 'false'
+            value: 'true'
           type: Dynamic
         type: Values
       type: Boolean
@@ -5519,7 +5519,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: CAN0_Handler
+            value: CAN0_InterruptHandler
           type: Dynamic
         type: Values
       type: String
@@ -5530,7 +5530,7 @@ data:
       - children:
         - attributes:
             id: can0
-            value: CAN0_Handler
+            value: CAN0_InterruptHandler
           type: Dynamic
         type: Values
       type: String
@@ -5541,7 +5541,7 @@ data:
       - children:
         - attributes:
             id: core
-            value: 'false'
+            value: 'true'
           type: Dynamic
         type: Values
       type: Boolean
@@ -5552,7 +5552,7 @@ data:
       - children:
         - attributes:
             id: can0
-            value: 'false'
+            value: 'true'
           type: Dynamic
         type: Values
       type: Boolean
@@ -5603,6 +5603,10 @@ data:
       children:
       - children:
         - attributes:
+            id: core
+            value: 'true'
+          type: Dynamic
+        - attributes:
             value: 'true'
           type: User
         type: Values
@@ -5623,6 +5627,10 @@ data:
         id: NVIC_1_0_ENABLE
       children:
       - children:
+        - attributes:
+            id: core
+            value: 'false'
+          type: Dynamic
         - attributes:
             value: 'false'
           type: User
@@ -5645,10 +5653,303 @@ data:
       children:
       - children:
         - attributes:
+            id: core
+            value: 'true'
+          type: Dynamic
+        - attributes:
             value: 'true'
           type: User
         type: Values
       type: Boolean
+    CAN1_INTERRUPT_ENABLE:
+      attributes:
+        id: CAN1_INTERRUPT_ENABLE
+      children:
+      - children:
+        - attributes:
+            id: can1
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    NVIC_16_0_HANDLER:
+      attributes:
+        id: NVIC_16_0_HANDLER
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: CAN1_InterruptHandler
+          type: Dynamic
+        type: Values
+      type: String
+    CAN1_INTERRUPT_HANDLER:
+      attributes:
+        id: CAN1_INTERRUPT_HANDLER
+      children:
+      - children:
+        - attributes:
+            id: can1
+            value: CAN1_InterruptHandler
+          type: Dynamic
+        type: Values
+      type: String
+    NVIC_16_0_HANDLER_LOCK:
+      attributes:
+        id: NVIC_16_0_HANDLER_LOCK
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    CAN1_INTERRUPT_HANDLER_LOCK:
+      attributes:
+        id: CAN1_INTERRUPT_HANDLER_LOCK
+      children:
+      - children:
+        - attributes:
+            id: can1
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    MCLK_APBA_INITIAL_VALUE:
+      attributes:
+        id: MCLK_APBA_INITIAL_VALUE
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: '0x1fff'
+          type: Dynamic
+        type: Values
+      type: String
+    EIC_CLOCK_FREQUENCY:
+      attributes:
+        id: EIC_CLOCK_FREQUENCY
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: '48000000'
+          type: Dynamic
+        type: Values
+      type: Integer
+    GCLK_ID_2_FREQ:
+      attributes:
+        id: GCLK_ID_2_FREQ
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: '48000000'
+          type: Dynamic
+        type: Values
+      type: Integer
+    GCLK_ID_2_CHEN:
+      attributes:
+        id: GCLK_ID_2_CHEN
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    EIC_CLOCK_ENABLE:
+      attributes:
+        id: EIC_CLOCK_ENABLE
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    EIC_INTERRUPT_ENABLE:
+      attributes:
+        id: EIC_INTERRUPT_ENABLE
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    NVIC_3_0_HANDLER_LOCK:
+      attributes:
+        id: NVIC_3_0_HANDLER_LOCK
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    EIC_INTERRUPT_HANDLER_LOCK:
+      attributes:
+        id: EIC_INTERRUPT_HANDLER_LOCK
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: 'true'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    NVIC_3_0_HANDLER:
+      attributes:
+        id: NVIC_3_0_HANDLER
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: EIC_InterruptHandler
+          type: Dynamic
+        type: Values
+      type: String
+    EIC_INTERRUPT_HANDLER:
+      attributes:
+        id: EIC_INTERRUPT_HANDLER
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: EIC_InterruptHandler
+          type: Dynamic
+        type: Values
+      type: String
+    WDT_HEADER:
+      attributes:
+        id: WDT_HEADER
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: File
+    WDT_SOURCE:
+      attributes:
+        id: WDT_SOURCE
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: File
+    WDT_SYS_DEF:
+      attributes:
+        id: WDT_SYS_DEF
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: File
+    WDT_INTERRUPT_ENABLE:
+      attributes:
+        id: WDT_INTERRUPT_ENABLE
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: 'false'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    NVIC_1_0_HANDLER_LOCK:
+      attributes:
+        id: NVIC_1_0_HANDLER_LOCK
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: 'false'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    WDT_INTERRUPT_HANDLER_LOCK:
+      attributes:
+        id: WDT_INTERRUPT_HANDLER_LOCK
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: 'false'
+          type: Dynamic
+        type: Values
+      type: Boolean
+    NVIC_1_0_HANDLER:
+      attributes:
+        id: NVIC_1_0_HANDLER
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: WDT_Handler
+          type: Dynamic
+        type: Values
+      type: String
+    WDT_INTERRUPT_HANDLER:
+      attributes:
+        id: WDT_INTERRUPT_HANDLER
+      children:
+      - children:
+        - attributes:
+            id: core
+            value: WDT_Handler
+          type: Dynamic
+        type: Values
+      type: String
+    WDT_USE:
+      attributes:
+        id: WDT_USE
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    PIN_59_LAT:
+      attributes:
+        id: PIN_59_LAT
+      children:
+      - children:
+        - attributes:
+            value: High
+          type: User
+        type: Values
+      type: String
+    PIN_60_LAT:
+      attributes:
+        id: PIN_60_LAT
+      children:
+      - children:
+        - attributes:
+            value: High
+          type: User
+        type: Values
+      type: String
   userData:
     children:
     - attributes:

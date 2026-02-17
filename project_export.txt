@@ -2,7 +2,7 @@
 PROJECT SOURCE EXPORT
 ================================================================================
 Source directory: C:\Users\forgi\MPLABProjects\SZEN_PDU_0.1\My_MCC_Config\src
-Exported at: 2026-02-16 15:48:02.177906
+Exported at: 2026-02-17 13:11:11.972883
 Total files: 149
 ================================================================================
 
@@ -66,14 +66,14 @@ TYPE: .h
 #include "peripheral/nvmctrl/plib_nvmctrl.h"
 #include "peripheral/sercom/i2c_master/plib_sercom1_i2c_master.h"
 #include "peripheral/evsys/plib_evsys.h"
-#include "peripheral/adc/plib_adc0.h"
 #include "peripheral/can/plib_can1.h"
+#include "peripheral/adc/plib_adc0.h"
 #include "peripheral/port/plib_port.h"
 #include "peripheral/clock/plib_clock.h"
 #include "peripheral/nvic/plib_nvic.h"
 #include "peripheral/systick/plib_systick.h"
-#include "peripheral/can/plib_can0.h"
 #include "peripheral/adc/plib_adc1.h"
+#include "peripheral/can/plib_can0.h"
 #include "peripheral/tc/plib_tc0.h"
 
 // DOM-IGNORE-BEGIN
@@ -740,15 +740,15 @@ void SYS_Initialize ( void* data )
 
     EVSYS_Initialize();
 
-
-    ADC0_Initialize();
     CAN1_Initialize();
 
-	SYSTICK_TimerInitialize();
-    CAN0_Initialize();
 
+    ADC0_Initialize();
+	SYSTICK_TimerInitialize();
 
     ADC1_Initialize();
+    CAN0_Initialize();
+
     TC0_TimerInitialize();
 
 
@@ -846,7 +846,7 @@ void __attribute__((optimize("-O1"), long_call, noreturn, used))Dummy_Handler(vo
 }
 
 /* MISRAC 2012 deviation block start */
-/* MISRA C-2012 Rule 8.6 deviated 33 times.  Deviation record ID -  H3_MISRAC_2012_R_8_6_DR_1 */
+/* MISRA C-2012 Rule 8.6 deviated 30 times.  Deviation record ID -  H3_MISRAC_2012_R_8_6_DR_1 */
 /* Device vectors list dummy definition*/
 extern void SVCall_Handler             ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void PendSV_Handler             ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
@@ -854,7 +854,6 @@ extern void SysTick_Handler            ( void ) __attribute__((weak, alias("Dumm
 extern void SYSTEM_Handler             ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void WDT_Handler                ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void RTC_Handler                ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
-extern void EIC_Handler                ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void FREQM_Handler              ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void MCRAMC_Handler             ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void NVMCTRL_Handler            ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
@@ -865,8 +864,6 @@ extern void SERCOM2_Handler            ( void ) __attribute__((weak, alias("Dumm
 extern void SERCOM3_Handler            ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void SERCOM4_Handler            ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void SERCOM5_Handler            ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
-extern void CAN0_Handler               ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
-extern void CAN1_Handler               ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void TCC0_Handler               ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void TCC1_Handler               ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
 extern void TCC2_Handler               ( void ) __attribute__((weak, alias("Dummy_Handler"),noreturn));
@@ -1014,7 +1011,10 @@ TYPE: .h
 void Reset_Handler (void);
 void NonMaskableInt_Handler (void);
 void HardFault_Handler (void);
+void EIC_Handler (void);
 void SERCOM1_I2C_InterruptHandler (void);
+void CAN0_Handler (void);
+void CAN1_Handler (void);
 void TC0_TimerInterruptHandler (void);
 
 
@@ -2102,6 +2102,11 @@ void CAN0_Initialize(void)
     /* Set Nominal Bit timing and Prescaler Register */
     CAN0_REGS->CAN_NBTP  = CAN_NBTP_NTSEG2(23UL) | CAN_NBTP_NTSEG1(70UL) | CAN_NBTP_NBRP(0UL) | CAN_NBTP_NSJW(23UL);
 
+    /*lint -e{9048} PC lint incorrectly reports a missing 'U' Suffix */
+    CAN0_REGS->CAN_NDAT1 = CAN_NDAT1_Msk;
+    /*lint -e{9048} PC lint incorrectly reports a missing 'U' Suffix */
+    CAN0_REGS->CAN_NDAT2 = CAN_NDAT2_Msk;
+
 
     /* Global Filter Configuration Register */
     CAN0_REGS->CAN_GFC = CAN_GFC_ANFS_REJECT | CAN_GFC_ANFE_REJECT;
@@ -2147,7 +2152,7 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
     uint8_t  count = 0U;
     bool transmitFifo_event = false;
 
-    if (!(((numberOfMessage < 1U) || (numberOfMessage > 1U)) || (txBuffer == NULL)))
+    if (!(((numberOfMessage < 1U) || (numberOfMessage > 16U)) || (txBuffer == NULL)))
     {
 
         tfqpi = (uint8_t)((CAN0_REGS->CAN_TXFQS & CAN_TXFQS_TFQPI_Msk) >> CAN_TXFQS_TFQPI_Pos);
@@ -2161,7 +2166,7 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
             txBuf += CAN0_TX_FIFO_BUFFER_ELEMENT_SIZE;
             bufferNumber |= (1UL << tfqpi);
             tfqpi++;
-            if (tfqpi == 1U)
+            if (tfqpi == 16U)
             {
                 tfqpi = 0U;
             }
@@ -2263,7 +2268,7 @@ bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFif
             }
             txEvtFifo += sizeof(CAN_TX_EVENT_FIFO);
             txefgi++;
-            if (txefgi == 1U)
+            if (txefgi == 16U)
             {
                 txefgi = 0U;
             }
@@ -2298,6 +2303,82 @@ uint8_t CAN0_TxEventFifoFillLevelGet(void)
     return (uint8_t)(CAN0_REGS->CAN_TXEFS & CAN_TXEFS_EFFL_Msk);
 }
 
+// *****************************************************************************
+/* Function:
+    bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer)
+
+   Summary:
+    Read a message from the specific Rx Buffer.
+
+   Precondition:
+    CAN0_Initialize must have been called for the associated CAN instance.
+
+   Parameters:
+    bufferNumber - Rx buffer number
+    rxBuffer     - Pointer to Rx buffer
+
+   Returns:
+    Request status.
+    true  - Request was successful.
+    false - Request has failed.
+*/
+bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer)
+{
+    uint8_t *rxBuf = NULL;
+    bool message_receive_event = false;
+
+    if((rxBuffer != NULL) && (bufferNumber < 16U))
+    {
+        rxBuf = (uint8_t *) ((uint8_t *)can0Obj.msgRAMConfig.rxBuffersAddress + ((uint32_t)bufferNumber * CAN0_RX_BUFFER_ELEMENT_SIZE));
+
+        (void) memcpy((uint8_t *)rxBuffer, rxBuf, CAN0_RX_BUFFER_ELEMENT_SIZE);
+
+        /* Clear new data flag */
+        CAN0_REGS->CAN_NDAT1 = (1UL << bufferNumber);
+        message_receive_event = true;
+    }
+    return message_receive_event;
+}
+
+// *****************************************************************************
+/* Function:
+    bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber)
+
+   Summary:
+    Get Rx Buffer Number.
+
+   Precondition:
+    CAN0_Initialize must have been called for the associated CAN instance.
+
+   Parameters:
+    None.
+
+   Returns:
+    Request status.
+    true  - Request was successful.
+    false - Request has failed.
+*/
+bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber)
+{
+    bool     status = false;
+    uint8_t  bufferNum = 0U;
+    uint32_t newData1 = CAN0_REGS->CAN_NDAT1;
+
+    if (newData1 != 0U)
+    {
+        for (bufferNum = 0U; bufferNum < 16U; bufferNum++)
+        {
+            if ((newData1 & (1UL << bufferNum)) == (1UL << bufferNum))
+            {
+                *bufferNumber = bufferNum;
+                status = true;
+                break;
+            }
+        }
+    }
+
+    return status;
+}
 
 // *****************************************************************************
 /* Function:
@@ -2346,7 +2427,7 @@ bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage,
                     }
                     rxBuf += CAN0_RX_FIFO0_ELEMENT_SIZE;
                     rxgi++;
-                    if (rxgi == 1U)
+                    if (rxgi == 16U)
                     {
                         rxgi = 0U;
                     }
@@ -2372,7 +2453,7 @@ bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage,
                     }
                     rxBuf += CAN0_RX_FIFO1_ELEMENT_SIZE;
                     rxgi++;
-                    if (rxgi == 1U)
+                    if (rxgi == 16U)
                     {
                         rxgi = 0U;
                     }
@@ -2542,7 +2623,7 @@ void CAN0_InterruptClear(CAN_INTERRUPT_MASK interruptMask)
    Returns:
     None
 */
-/* MISRA C-2012 Rule 11.3 violated 4 times below. Deviation record ID - H3_MISRAC_2012_R_11_3_DR_1*/
+/* MISRA C-2012 Rule 11.3 violated 5 times below. Deviation record ID - H3_MISRAC_2012_R_11_3_DR_1*/
 void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
 {
     uint32_t offset = 0U;
@@ -2563,25 +2644,29 @@ void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
     can0Obj.msgRAMConfig.rxFIFO0Address = (can_rxf0e_registers_t *)msgRAMConfigBaseAddr;
     offset = CAN0_RX_FIFO0_SIZE;
     /* Receive FIFO 0 Configuration Register */
-    CAN0_REGS->CAN_RXF0C = CAN_RXF0C_F0S(1UL) | CAN_RXF0C_F0WM(0UL) | CAN_RXF0C_F0OM_Msk |
+    CAN0_REGS->CAN_RXF0C = CAN_RXF0C_F0S(16UL) | CAN_RXF0C_F0WM(0UL) | CAN_RXF0C_F0OM_Msk |
             CAN_RXF0C_F0SA((uint32_t)can0Obj.msgRAMConfig.rxFIFO0Address);
 
     can0Obj.msgRAMConfig.rxFIFO1Address = (can_rxf1e_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_RX_FIFO1_SIZE;
     /* Receive FIFO 1 Configuration Register */
-    CAN0_REGS->CAN_RXF1C = CAN_RXF1C_F1S(1UL) | CAN_RXF1C_F1WM(0UL) | CAN_RXF1C_F1OM_Msk |
+    CAN0_REGS->CAN_RXF1C = CAN_RXF1C_F1S(16UL) | CAN_RXF1C_F1WM(0UL) | CAN_RXF1C_F1OM_Msk |
             CAN_RXF1C_F1SA((uint32_t)can0Obj.msgRAMConfig.rxFIFO1Address);
+
+    can0Obj.msgRAMConfig.rxBuffersAddress = (can_rxbe_registers_t *)(msgRAMConfigBaseAddr + offset);
+    offset += CAN0_RX_BUFFER_SIZE;
+    CAN0_REGS->CAN_RXBC = CAN_RXBC_RBSA((uint32_t)can0Obj.msgRAMConfig.rxBuffersAddress);
 
     can0Obj.msgRAMConfig.txBuffersAddress = (can_txbe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_TX_FIFO_BUFFER_SIZE;
     /* Transmit Buffer/FIFO Configuration Register */
-    CAN0_REGS->CAN_TXBC = CAN_TXBC_TFQS(1UL) |
+    CAN0_REGS->CAN_TXBC = CAN_TXBC_TFQS(16UL) |
             CAN_TXBC_TBSA((uint32_t)can0Obj.msgRAMConfig.txBuffersAddress);
 
     can0Obj.msgRAMConfig.txEventFIFOAddress =  (can_txefe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_TX_EVENT_FIFO_SIZE;
     /* Transmit Event FIFO Configuration Register */
-    CAN0_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(1UL) |
+    CAN0_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(16UL) |
             CAN_TXEFC_EFSA((uint32_t)can0Obj.msgRAMConfig.txEventFIFOAddress);
 
 
@@ -2794,16 +2879,18 @@ TYPE: .h
 
 /* CAN0 Message RAM Configuration Size */
 #define CAN0_RX_FIFO0_ELEMENT_SIZE       16U
-#define CAN0_RX_FIFO0_SIZE               16U
+#define CAN0_RX_FIFO0_SIZE               256U
 #define CAN0_RX_FIFO1_ELEMENT_SIZE       16U
-#define CAN0_RX_FIFO1_SIZE               16U
+#define CAN0_RX_FIFO1_SIZE               256U
+#define CAN0_RX_BUFFER_ELEMENT_SIZE      16U
+#define CAN0_RX_BUFFER_SIZE              256U
 #define CAN0_TX_FIFO_BUFFER_ELEMENT_SIZE 16U
-#define CAN0_TX_FIFO_BUFFER_SIZE         16U
-#define CAN0_TX_EVENT_FIFO_SIZE          8U
+#define CAN0_TX_FIFO_BUFFER_SIZE         256U
+#define CAN0_TX_EVENT_FIFO_SIZE          128U
 
 /* CAN0_MESSAGE_RAM_CONFIG_SIZE to be used by application or driver
    for allocating buffer from non-cached contiguous memory */
-#define CAN0_MESSAGE_RAM_CONFIG_SIZE     56U
+#define CAN0_MESSAGE_RAM_CONFIG_SIZE     1152U
 
 // *****************************************************************************
 // *****************************************************************************
@@ -2816,6 +2903,8 @@ uint8_t CAN0_TxFifoFreeLevelGet(void);
 bool CAN0_TxBufferIsBusy(uint8_t bufferNumber);
 bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFifo);
 uint8_t CAN0_TxEventFifoFillLevelGet(void);
+bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer);
+bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber);
 bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage, CAN_RX_BUFFER *rxBuffer);
 uint8_t CAN0_RxFifoFillLevelGet(CAN_RX_FIFO_NUM rxFifoNum);
 CAN_ERROR CAN0_ErrorGet(void);
@@ -4875,8 +4964,14 @@ void NVIC_Initialize( void )
 
     /* Enable the interrupt sources and configure the priorities as configured
      * from within the "Interrupt Manager" of MHC. */
-    NVIC_SetPriority(SERCOM1_IRQn, 3);
+    NVIC_SetPriority(EIC_IRQn, 3);
+    NVIC_EnableIRQ(EIC_IRQn);
+    NVIC_SetPriority(SERCOM1_IRQn, 2);
     NVIC_EnableIRQ(SERCOM1_IRQn);
+    NVIC_SetPriority(CAN0_IRQn, 1);
+    NVIC_EnableIRQ(CAN0_IRQn);
+    NVIC_SetPriority(CAN1_IRQn, 1);
+    NVIC_EnableIRQ(CAN1_IRQn);
     NVIC_SetPriority(TC0_IRQn, 3);
     NVIC_EnableIRQ(TC0_IRQn);
 
@@ -42273,90 +42368,196 @@ FILE: pdu.c
 TYPE: .c
 ################################################################################
 
+/**
+ * @file pdu.c
+ * @brief Power Distribution Unit (PDU) implementation
+ * 
+ * Implements self-test and monitoring functions for 8 TPS25990 eFuses.
+ */
+
 #include "pdu.h"
 #include "pdu_adc.h"
 #include "pmbus.h"
+#include "tps25990.h"
 #include "linear11.h"
 #include "definitions.h"
 
-/* TPS25990 PMBus addresses */
-static const uint8_t tps_addr[8] =
+/* TPS25990 PMBus I2C addresses for each eFuse channel */
+static const uint8_t tps_addr[PDU_NUM_EFUSES] =
 {
-    0x45, /* Hybrid */
-    0x48, /* Vent1 */
-    0x43, /* Vent2 */
-    0x40, /* IGN */
-    0x51, /* Fuel */
-    0x41, /* WP1 */
-    0x46, /* WP2 */
-    0x50  /* 12V */
+    0x45U,  /* Hybrid */
+    0x48U,  /* Vent1 */
+    0x43U,  /* Vent2 */
+    0x40U,  /* IGN */
+    0x51U,  /* Fuel */
+    0x41U,  /* WP1 */
+    0x46U,  /* WP2 */
+    0x50U   /* 12V */
 };
 
+/* Minimum voltage threshold for voltage check (11.0V) */
+#define MIN_VOLTAGE_THRESHOLD   11.0f
+
+/* Power calculation tolerance (50% - very lenient for sanity check) */
+#define POWER_CHECK_TOLERANCE   0.5f
+
+/* Delay loop count for FET state change (~1ms at typical CPU speed) */
+#define FET_STATE_DELAY_COUNT   10000UL
+
+/**
+ * @brief Software delay using busy-wait loop
+ * 
+ * Note: This is a simple busy-wait delay. For production code, consider
+ * using SYSTICK_DelayMs() or other timer-based delays for better CPU utilization.
+ * 
+ * @param count Number of iterations to delay
+ */
+static void delay_loop(uint32_t count)
+{
+    volatile uint32_t i;
+    for (i = 0U; i < count; i++) {
+        /* Busy wait - prevents compiler optimization */
+    }
+}
+
+/**
+ * @brief Check if all eFuses have input voltage above threshold
+ * 
+ * Reads VOUT from each eFuse and verifies it's above 11V.
+ * 
+ * @return true if all voltages are OK, false if any is below threshold
+ */
 static bool check_voltage_all(void)
 {
-    for (uint8_t i = 0; i < 8; i++)
+    uint8_t i;
+    
+    for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
         uint16_t raw;
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &raw) != PMBUS_OK)
+        
+        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &raw) != PMBUS_OK) {
             return false;
+        }
 
         float v = linear11_to_float(raw);
-        if (v < 11.0f)
+        if (v < MIN_VOLTAGE_THRESHOLD) {
             return false;
+        }
     }
     return true;
 }
 
+/**
+ * @brief Check power calculation consistency for all eFuses
+ * 
+ * Compares calculated power (V*I) with measured power from each eFuse.
+ * 
+ * @return true if all power readings are consistent, false otherwise
+ */
 static bool check_power_all(void)
 {
-    for (uint8_t i = 0; i < 8; i++)
+    uint8_t i;
+    
+    for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
         uint16_t vraw, iraw, praw;
 
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw) != PMBUS_OK)
+        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw) != PMBUS_OK) {
             return false;
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_IOUT, &iraw) != PMBUS_OK)
+        }
+        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_IIN, &iraw) != PMBUS_OK) {
             return false;
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_PIN, &praw) != PMBUS_OK)
+        }
+        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_PIN, &praw) != PMBUS_OK) {
             return false;
+        }
 
         float v = linear11_to_float(vraw);
-        float i = linear11_to_float(iraw);
-        float p_calc = v * i;
+        float current = linear11_to_float(iraw);
+        float p_calc = v * current;
         float p_meas = linear11_to_float(praw);
 
-        if (p_meas < (p_calc * 0.5f)) /* sanity check */
+        /* Skip check if power is very low (avoid division issues) */
+        if (p_calc < 0.1f) {
+            continue;
+        }
+
+        /* Check if measured power is at least 50% of calculated */
+        if (p_meas < (p_calc * POWER_CHECK_TOLERANCE)) {
             return false;
+        }
     }
     return true;
 }
 
+/**
+ * @brief Check FET driver operation for all eFuses
+ * 
+ * For each eFuse:
+ * 1. Turn OFF the output
+ * 2. Turn ON the output
+ * 3. Verify FET_OFF status bit changes correctly
+ * 
+ * @return true if all FET drivers respond correctly, false otherwise
+ */
 static bool check_fet_all(void)
 {
-    for (uint8_t i = 0; i < 8; i++)
+    uint8_t i;
+    
+    for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
         uint8_t status;
 
-        pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, 0x00);
-        pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, 0x80);
-
-        if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK)
+        /* Turn OFF the output */
+        if (pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, PMBUS_OPERATION_OFF) != PMBUS_OK) {
             return false;
+        }
 
-        if (status & (1u << 6)) /* FET_OFF bit */
+        /* Delay for FET state change */
+        delay_loop(FET_STATE_DELAY_COUNT);
+
+        /* Read STATUS_BYTE to verify FET is OFF */
+        if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK) {
             return false;
+        }
+
+        /* Verify FET_OFF bit is SET (FET should be off) */
+        if ((status & TPS25990_SB_FET_OFF) == 0U) {
+            return false;  /* FET should be off but isn't */
+        }
+
+        /* Turn ON the output */
+        if (pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, PMBUS_OPERATION_ON) != PMBUS_OK) {
+            return false;
+        }
+
+        /* Delay for FET state change */
+        delay_loop(FET_STATE_DELAY_COUNT);
+
+        /* Read STATUS_BYTE to verify FET is ON */
+        if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK) {
+            return false;
+        }
+
+        /* Verify FET_OFF bit is CLEAR (FET should be on) */
+        if ((status & TPS25990_SB_FET_OFF) != 0U) {
+            return false;  /* FET should be on but isn't */
+        }
     }
     return true;
 }
 
 void PDU_Init(void)
 {
+    /* Initialize ADC for IMON readings */
     PDU_ADC_Init();
 
+    /* Configure LED GPIOs as outputs */
     GPIO_GLED_OutputEnable();
     GPIO_BLED_OutputEnable();
     GPIO_RLED_OutputEnable();
 
+    /* LEDs are active-low, start with all OFF (Set = LED off) */
     GPIO_GLED_Set();
     GPIO_BLED_Set();
     GPIO_RLED_Set();
@@ -42368,17 +42569,38 @@ void PDU_RunChecks(void)
     bool p_ok = check_power_all();
     bool f_ok = check_fet_all();
 
-    /* Active-low LEDs */
-    if (v_ok) GPIO_GLED_Clear();
-    else GPIO_GLED_Toggle();
+    /* 
+     * Active-low LEDs:
+     * - Clear() = LED ON (pulling low)
+     * - Set() = LED OFF (pulling high)
+     * - Toggle() = blink effect
+     *
+     * Green LED: Voltage check
+     * Blue LED: Power calculation check
+     * Red LED: FET driver check
+     */
+    
+    /* Green LED - Voltage check */
+    if (v_ok) {
+        GPIO_GLED_Clear();  /* All OK - LED solid ON */
+    } else {
+        GPIO_GLED_Toggle(); /* Fault - LED blinks */
+    }
 
-    if (p_ok) GPIO_BLED_Clear();
-    else GPIO_BLED_Toggle();
+    /* Blue LED - Power check */
+    if (p_ok) {
+        GPIO_BLED_Clear();  /* All OK - LED solid ON */
+    } else {
+        GPIO_BLED_Toggle(); /* Fault - LED blinks */
+    }
 
-    if (f_ok) GPIO_RLED_Clear();
-    else GPIO_RLED_Toggle();
+    /* Red LED - FET check */
+    if (f_ok) {
+        GPIO_RLED_Clear();  /* All OK - LED solid ON */
+    } else {
+        GPIO_RLED_Toggle(); /* Fault - LED blinks */
+    }
 }
-
 
 
 ################################################################################
@@ -42386,23 +42608,54 @@ FILE: pdu.h
 TYPE: .h
 ################################################################################
 
+/**
+ * @file pdu.h
+ * @brief Power Distribution Unit (PDU) control and monitoring interface
+ * 
+ * Provides initialization and self-test functionality for the PDU
+ * with 8 TPS25990 eFuses.
+ */
+
 #ifndef PDU_H
 #define PDU_H
 
+#include <stdint.h>
 #include <stdbool.h>
-//#include <stdint.h>
 
+/**
+ * @brief PDU operation result codes
+ */
 typedef enum
 {
-    PDU_OK = 0,
-    PDU_FAULT
+    PDU_OK = 0,     /**< Operation successful */
+    PDU_FAULT       /**< Operation failed or fault detected */
 } pdu_result_t;
 
+/**
+ * @brief Number of eFuses in the system
+ */
+#define PDU_NUM_EFUSES  8U
+
+/**
+ * @brief Initialize the PDU subsystem
+ * 
+ * Initializes ADC, GPIO pins for LEDs, and prepares for eFuse communication.
+ */
 void PDU_Init(void);
+
+/**
+ * @brief Run all PDU self-checks and update status LEDs
+ * 
+ * Performs:
+ * - Voltage check (all eFuses >11V) - Green LED
+ * - Power calculation check - Blue LED  
+ * - FET driver check - Red LED
+ * 
+ * LED states: ON = all OK, BLINK = fault detected
+ */
 void PDU_RunChecks(void);
 
 #endif /* PDU_H */
-
 
 
 ################################################################################
@@ -42452,17 +42705,26 @@ FILE: pdu_adc.h
 TYPE: .h
 ################################################################################
 
+/**
+ * @file pdu_adc.h
+ * @brief PDU ADC interface for IMON current monitoring
+ * 
+ * Provides ADC reading functionality for the TPS25990 IMON pins.
+ */
+
 #ifndef PDU_ADC_H
 #define PDU_ADC_H
 
-//#include <stdint.h>
+#include <stdint.h>
 #include <stdbool.h>
 
-/* External reference voltage */
-#define ADC_VREF_VOLTS 2.048f
-#define ADC_MAX_COUNTS 4095.0f   /* 12-bit ADC */
+/* External reference voltage for ADC */
+#define ADC_VREF_VOLTS      2.048f
+#define ADC_MAX_COUNTS      4095.0f   /* 12-bit ADC */
 
-/* ADC channels for IMON pins (example – adjust to MCC) */
+/**
+ * @brief ADC channels for IMON pins mapping to eFuse channels
+ */
 typedef enum
 {
     PDU_ADC_IMON_HYBRID = 0,
@@ -42475,11 +42737,20 @@ typedef enum
     PDU_ADC_IMON_12V
 } pdu_adc_channel_t;
 
-void  PDU_ADC_Init(void);
+/**
+ * @brief Initialize ADC peripherals for IMON reading
+ */
+void PDU_ADC_Init(void);
+
+/**
+ * @brief Read voltage from an IMON ADC channel
+ * 
+ * @param ch ADC channel to read
+ * @return float Voltage in volts
+ */
 float PDU_ADC_ReadVoltage(pdu_adc_channel_t ch);
 
 #endif /* PDU_ADC_H */
-
 
 
 ################################################################################
@@ -42487,12 +42758,24 @@ FILE: pmbus.c
 TYPE: .c
 ################################################################################
 
+/**
+ * @file pmbus.c
+ * @brief PMBus/SMBus implementation with PEC for PIC32CM5164JH01
+ * 
+ * Implements PMBus read/write operations using the SERCOM1 I2C peripheral
+ * with full PEC (Packet Error Checking) support as per SMBus specification.
+ */
+
 #include "pmbus.h"
 #include "pmbus_pec.h"
-#include "peripheral/sercom/i2c_master/plib_sercom1_i2c_master.h"
+#include "config/default/peripheral/sercom/i2c_master/plib_sercom1_i2c_master.h"
 
 #define I2C_TIMEOUT 100000UL
 
+/**
+ * @brief Wait for I2C operation to complete with timeout
+ * @return true if completed, false if timeout
+ */
 static bool i2c_wait(void)
 {
     uint32_t t = I2C_TIMEOUT;
@@ -42504,12 +42787,35 @@ static bool i2c_wait(void)
     return true;
 }
 
+pmbus_status_t pmbus_send_byte(uint8_t addr, uint8_t command)
+{
+    uint8_t tx[2];
+    uint8_t crc = 0U;
+    uint8_t addr_w = (uint8_t)(addr << 1U);  /* Write address = 7-bit addr shifted left */
+
+    /* Calculate PEC over: slave address (write) + command */
+    crc = pmbus_crc8_update(crc, addr_w);
+    crc = pmbus_crc8_update(crc, command);
+
+    tx[0] = command;
+    tx[1] = crc;
+
+    if (!SERCOM1_I2C_Write(addr, tx, sizeof(tx))) {
+        return PMBUS_BUS_ERROR;
+    }
+    if (!i2c_wait()) {
+        return PMBUS_TIMEOUT;
+    }
+    return SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE ? PMBUS_NACK : PMBUS_OK;
+}
+
 pmbus_status_t pmbus_write_byte(uint8_t addr, uint8_t command, uint8_t data)
 {
     uint8_t tx[3];
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);  /* Write address = 7-bit addr shifted left */
 
+    /* Calculate PEC over: slave address (write) + command + data */
     crc = pmbus_crc8_update(crc, addr_w);
     crc = pmbus_crc8_update(crc, command);
     crc = pmbus_crc8_update(crc, data);
@@ -42524,30 +42830,110 @@ pmbus_status_t pmbus_write_byte(uint8_t addr, uint8_t command, uint8_t data)
     if (!i2c_wait()) {
         return PMBUS_TIMEOUT;
     }
-    return SERCOM1_I2C_ErrorGet() ? PMBUS_NACK : PMBUS_OK;
+    return SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE ? PMBUS_NACK : PMBUS_OK;
 }
 
-pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out)
+pmbus_status_t pmbus_write_word(uint8_t addr, uint8_t command, uint16_t data)
 {
-    uint8_t rx[3];
+    uint8_t tx[4];
     uint8_t crc = 0U;
-    uint8_t addr_w = (uint8_t)((addr << 1U) | 0U);
-    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U);
+    uint8_t addr_w = (uint8_t)(addr << 1U);  /* Write address = 7-bit addr shifted left */
+    uint8_t data_lo = (uint8_t)(data & 0xFFU);
+    uint8_t data_hi = (uint8_t)((data >> 8U) & 0xFFU);
 
+    /* Calculate PEC over: slave address (write) + command + data_lo + data_hi */
+    crc = pmbus_crc8_update(crc, addr_w);
+    crc = pmbus_crc8_update(crc, command);
+    crc = pmbus_crc8_update(crc, data_lo);
+    crc = pmbus_crc8_update(crc, data_hi);
+
+    tx[0] = command;
+    tx[1] = data_lo;
+    tx[2] = data_hi;
+    tx[3] = crc;
+
+    if (!SERCOM1_I2C_Write(addr, tx, sizeof(tx))) {
+        return PMBUS_BUS_ERROR;
+    }
+    if (!i2c_wait()) {
+        return PMBUS_TIMEOUT;
+    }
+    return SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE ? PMBUS_NACK : PMBUS_OK;
+}
+
+pmbus_status_t pmbus_read_byte(uint8_t addr, uint8_t command, uint8_t *out)
+{
+    uint8_t rx[2];  /* data byte + PEC */
+    uint8_t crc = 0U;
+    uint8_t addr_w = (uint8_t)(addr << 1U);        /* Write address */
+    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U); /* Read address */
+
+    /* Send command byte */
     if (!SERCOM1_I2C_Write(addr, &command, 1U)) {
         return PMBUS_BUS_ERROR;
     }
     if (!i2c_wait()) {
         return PMBUS_TIMEOUT;
     }
+    if (SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE) {
+        return PMBUS_NACK;
+    }
 
+    /* Read data byte + PEC */
     if (!SERCOM1_I2C_Read(addr, rx, sizeof(rx))) {
         return PMBUS_BUS_ERROR;
     }
     if (!i2c_wait()) {
         return PMBUS_TIMEOUT;
     }
+    if (SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE) {
+        return PMBUS_NACK;
+    }
 
+    /* Verify PEC: slave address (write) + command + slave address (read) + data */
+    crc = pmbus_crc8_update(crc, addr_w);
+    crc = pmbus_crc8_update(crc, command);
+    crc = pmbus_crc8_update(crc, addr_r);
+    crc = pmbus_crc8_update(crc, rx[0]);
+
+    if (crc != rx[1]) {
+        return PMBUS_PEC_ERROR;
+    }
+
+    *out = rx[0];
+    return PMBUS_OK;
+}
+
+pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out)
+{
+    uint8_t rx[3];  /* data_lo + data_hi + PEC */
+    uint8_t crc = 0U;
+    uint8_t addr_w = (uint8_t)(addr << 1U);        /* Write address */
+    uint8_t addr_r = (uint8_t)((addr << 1U) | 1U); /* Read address */
+
+    /* Send command byte */
+    if (!SERCOM1_I2C_Write(addr, &command, 1U)) {
+        return PMBUS_BUS_ERROR;
+    }
+    if (!i2c_wait()) {
+        return PMBUS_TIMEOUT;
+    }
+    if (SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE) {
+        return PMBUS_NACK;
+    }
+
+    /* Read data word (2 bytes) + PEC */
+    if (!SERCOM1_I2C_Read(addr, rx, sizeof(rx))) {
+        return PMBUS_BUS_ERROR;
+    }
+    if (!i2c_wait()) {
+        return PMBUS_TIMEOUT;
+    }
+    if (SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE) {
+        return PMBUS_NACK;
+    }
+
+    /* Verify PEC: slave address (write) + command + slave address (read) + data_lo + data_hi */
     crc = pmbus_crc8_update(crc, addr_w);
     crc = pmbus_crc8_update(crc, command);
     crc = pmbus_crc8_update(crc, addr_r);
@@ -42563,11 +42949,18 @@ pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out)
 }
 
 
-
 ################################################################################
 FILE: pmbus.h
 TYPE: .h
 ################################################################################
+
+/**
+ * @file pmbus.h
+ * @brief PMBus/SMBus communication interface for TPS25990 eFuses
+ * 
+ * Provides I2C-based PMBus communication with PEC (Packet Error Checking)
+ * support for the TPS25990 eFuse devices on PIC32CM5164JH01.
+ */
 
 #ifndef PMBUS_H
 #define PMBUS_H
@@ -42575,19 +42968,158 @@ TYPE: .h
 #include <stdint.h>
 #include <stdbool.h>
 
+/*============================================================================
+ * PMBus Standard Commands (from PMBus Specification)
+ *===========================================================================*/
+
+/* Standard PMBus Commands */
+#define PMBUS_CMD_PAGE              0x00U
+#define PMBUS_CMD_OPERATION         0x01U
+#define PMBUS_CMD_ON_OFF_CONFIG     0x02U
+#define PMBUS_CMD_CLEAR_FAULTS      0x03U
+#define PMBUS_CMD_WRITE_PROTECT     0x10U
+#define PMBUS_CMD_CAPABILITY        0x19U
+#define PMBUS_CMD_VOUT_MODE         0x20U
+
+/* PMBus Threshold Configuration Commands */
+#define PMBUS_CMD_VIN_OV_FLT        0x55U
+#define PMBUS_CMD_VIN_UV_FLT        0x59U
+#define PMBUS_CMD_IIN_OC_FLT        0x5BU
+#define PMBUS_CMD_OT_FLT            0x5FU
+#define PMBUS_CMD_OT_WARN           0x51U
+
+/* PMBus Status Commands */
+#define PMBUS_CMD_STATUS_BYTE       0x78U
+#define PMBUS_CMD_STATUS_WORD       0x79U
+#define PMBUS_CMD_STATUS_VOUT       0x7AU
+#define PMBUS_CMD_STATUS_IOUT       0x7BU
+#define PMBUS_CMD_STATUS_IN         0x7CU
+#define PMBUS_CMD_STATUS_TEMP       0x7DU
+#define PMBUS_CMD_STATUS_CML        0x7EU
+#define PMBUS_CMD_STATUS_MFR        0x80U
+
+/* PMBus Telemetry Read Commands */
+#define PMBUS_CMD_READ_VIN          0x88U
+#define PMBUS_CMD_READ_IIN          0x89U
+#define PMBUS_CMD_READ_VOUT         0x8BU
+#define PMBUS_CMD_READ_IOUT         0x8CU
+#define PMBUS_CMD_READ_TEMP         0x8DU
+#define PMBUS_CMD_READ_PIN          0x97U
+
+/* PMBus Identification Commands */
+#define PMBUS_CMD_PMBUS_REV         0x98U
+#define PMBUS_CMD_MFR_ID            0x99U
+#define PMBUS_CMD_MFR_MODEL         0x9AU
+#define PMBUS_CMD_MFR_REVISION      0x9BU
+#define PMBUS_CMD_IC_DEV_ID         0xADU
+#define PMBUS_CMD_IC_DEV_REV        0xAEU
+
+/*============================================================================
+ * TPS25990-Specific Commands
+ *===========================================================================*/
+
+/* TPS25990 Manufacturer-Specific Status Registers */
+#define TPS25990_CMD_STATUS_MFR_SPECIFIC_2  0xF3U
+
+/* TPS25990 Configuration Commands */
+#define TPS25990_CMD_DEVICE_CONFIG      0xE4U
+#define TPS25990_CMD_ADC_CONFIG         0xE7U
+#define TPS25990_CMD_ADC_CONFIG_2       0xE9U
+#define TPS25990_CMD_ALERT_MASK         0xDBU
+
+/* TPS25990 Telemetry Read Commands */
+#define TPS25990_CMD_READ_AUX           0xEBU
+#define TPS25990_CMD_READ_EIN           0x86U
+#define TPS25990_CMD_READ_VBB           0xE3U
+
+/* TPS25990 Protection Configuration */
+#define TPS25990_CMD_IREF_DAC           0xE5U
+#define TPS25990_CMD_OC_TIMER           0xE6U
+#define TPS25990_CMD_PEAK_POWER         0xEDU
+
+/* TPS25990 Blackbox Commands */
+#define TPS25990_CMD_READ_BB_EEPROM     0xF4U
+#define TPS25990_CMD_BB_HEADER          0xBAU
+#define TPS25990_CMD_BB_COUNT           0xBBU
+
+/* TPS25990 Manufacturer Write Protect */
+#define TPS25990_CMD_MFR_WRITE_PROTECT  0xF8U
+
+/*============================================================================
+ * PMBus OPERATION Command Bit Definitions
+ *===========================================================================*/
+
+#define PMBUS_OPERATION_OFF         0x00U   /* Output OFF (immediate) */
+#define PMBUS_OPERATION_ON          0x80U   /* Output ON */
+#define PMBUS_OPERATION_MARGIN_LOW  0x98U   /* Margin Low */
+#define PMBUS_OPERATION_MARGIN_HIGH 0xA8U   /* Margin High */
+
+/*============================================================================
+ * PMBus Status Return Type
+ *===========================================================================*/
+
 typedef enum {
-    PMBUS_OK = 0,
-    PMBUS_NACK,
-    PMBUS_TIMEOUT,
-    PMBUS_PEC_ERROR,
-    PMBUS_BUS_ERROR
+    PMBUS_OK = 0,           /**< Operation completed successfully */
+    PMBUS_NACK,             /**< Device did not acknowledge */
+    PMBUS_TIMEOUT,          /**< Communication timeout */
+    PMBUS_PEC_ERROR,        /**< PEC (CRC) check failed */
+    PMBUS_BUS_ERROR         /**< I2C bus error */
 } pmbus_status_t;
 
+/*============================================================================
+ * PMBus Function Declarations
+ *===========================================================================*/
+
+/**
+ * @brief Write a single byte via PMBus with PEC
+ * 
+ * @param addr 7-bit I2C device address
+ * @param command PMBus command byte
+ * @param data Byte to write
+ * @return pmbus_status_t PMBUS_OK on success
+ */
 pmbus_status_t pmbus_write_byte(uint8_t addr, uint8_t command, uint8_t data);
+
+/**
+ * @brief Write a 16-bit word via PMBus with PEC
+ * 
+ * @param addr 7-bit I2C device address
+ * @param command PMBus command byte
+ * @param data 16-bit word to write (little-endian)
+ * @return pmbus_status_t PMBUS_OK on success
+ */
+pmbus_status_t pmbus_write_word(uint8_t addr, uint8_t command, uint16_t data);
+
+/**
+ * @brief Read a single byte via PMBus with PEC verification
+ * 
+ * @param addr 7-bit I2C device address
+ * @param command PMBus command byte
+ * @param out Pointer to store read byte
+ * @return pmbus_status_t PMBUS_OK on success
+ */
+pmbus_status_t pmbus_read_byte(uint8_t addr, uint8_t command, uint8_t *out);
+
+/**
+ * @brief Read a 16-bit word via PMBus with PEC verification
+ * 
+ * @param addr 7-bit I2C device address
+ * @param command PMBus command byte
+ * @param out Pointer to store read word (little-endian)
+ * @return pmbus_status_t PMBUS_OK on success
+ */
 pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out);
 
-#endif /* PMBUS_H */
+/**
+ * @brief Send a command without data (Send Byte operation)
+ * 
+ * @param addr 7-bit I2C device address
+ * @param command PMBus command byte
+ * @return pmbus_status_t PMBUS_OK on success
+ */
+pmbus_status_t pmbus_send_byte(uint8_t addr, uint8_t command);
 
+#endif /* PMBUS_H */
 
 
 ################################################################################
@@ -42595,30 +43127,72 @@ FILE: pmbus_pec.c
 TYPE: .c
 ################################################################################
 
+/**
+ * @file pmbus_pec.c
+ * @brief PMBus PEC (Packet Error Checking) implementation using SMBus CRC-8
+ * 
+ * The SMBus CRC-8 uses polynomial: x^8 + x^2 + x + 1 (0x07)
+ * with an initial value of 0x00.
+ */
+
 #include "pmbus_pec.h"
+
+/**
+ * @brief SMBus CRC-8 lookup table (polynomial 0x07)
+ * 
+ * Pre-computed table for fast CRC-8 calculation.
+ */
+static const uint8_t crc8_table[256] = {
+    0x00U, 0x07U, 0x0EU, 0x09U, 0x1CU, 0x1BU, 0x12U, 0x15U,
+    0x38U, 0x3FU, 0x36U, 0x31U, 0x24U, 0x23U, 0x2AU, 0x2DU,
+    0x70U, 0x77U, 0x7EU, 0x79U, 0x6CU, 0x6BU, 0x62U, 0x65U,
+    0x48U, 0x4FU, 0x46U, 0x41U, 0x54U, 0x53U, 0x5AU, 0x5DU,
+    0xE0U, 0xE7U, 0xEEU, 0xE9U, 0xFCU, 0xFBU, 0xF2U, 0xF5U,
+    0xD8U, 0xDFU, 0xD6U, 0xD1U, 0xC4U, 0xC3U, 0xCAU, 0xCDU,
+    0x90U, 0x97U, 0x9EU, 0x99U, 0x8CU, 0x8BU, 0x82U, 0x85U,
+    0xA8U, 0xAFU, 0xA6U, 0xA1U, 0xB4U, 0xB3U, 0xBAU, 0xBDU,
+    0xC7U, 0xC0U, 0xC9U, 0xCEU, 0xDBU, 0xDCU, 0xD5U, 0xD2U,
+    0xFFU, 0xF8U, 0xF1U, 0xF6U, 0xE3U, 0xE4U, 0xEDU, 0xEAU,
+    0xB7U, 0xB0U, 0xB9U, 0xBEU, 0xABU, 0xACU, 0xA5U, 0xA2U,
+    0x8FU, 0x88U, 0x81U, 0x86U, 0x93U, 0x94U, 0x9DU, 0x9AU,
+    0x27U, 0x20U, 0x29U, 0x2EU, 0x3BU, 0x3CU, 0x35U, 0x32U,
+    0x1FU, 0x18U, 0x11U, 0x16U, 0x03U, 0x04U, 0x0DU, 0x0AU,
+    0x57U, 0x50U, 0x59U, 0x5EU, 0x4BU, 0x4CU, 0x45U, 0x42U,
+    0x6FU, 0x68U, 0x61U, 0x66U, 0x73U, 0x74U, 0x7DU, 0x7AU,
+    0x89U, 0x8EU, 0x87U, 0x80U, 0x95U, 0x92U, 0x9BU, 0x9CU,
+    0xB1U, 0xB6U, 0xBFU, 0xB8U, 0xADU, 0xAAU, 0xA3U, 0xA4U,
+    0xF9U, 0xFEU, 0xF7U, 0xF0U, 0xE5U, 0xE2U, 0xEBU, 0xECU,
+    0xC1U, 0xC6U, 0xCFU, 0xC8U, 0xDDU, 0xDAU, 0xD3U, 0xD4U,
+    0x69U, 0x6EU, 0x67U, 0x60U, 0x75U, 0x72U, 0x7BU, 0x7CU,
+    0x51U, 0x56U, 0x5FU, 0x58U, 0x4DU, 0x4AU, 0x43U, 0x44U,
+    0x19U, 0x1EU, 0x17U, 0x10U, 0x05U, 0x02U, 0x0BU, 0x0CU,
+    0x21U, 0x26U, 0x2FU, 0x28U, 0x3DU, 0x3AU, 0x33U, 0x34U,
+    0x4EU, 0x49U, 0x40U, 0x47U, 0x52U, 0x55U, 0x5CU, 0x5BU,
+    0x76U, 0x71U, 0x78U, 0x7FU, 0x6AU, 0x6DU, 0x64U, 0x63U,
+    0x3EU, 0x39U, 0x30U, 0x37U, 0x22U, 0x25U, 0x2CU, 0x2BU,
+    0x06U, 0x01U, 0x08U, 0x0FU, 0x1AU, 0x1DU, 0x14U, 0x13U,
+    0xAEU, 0xA9U, 0xA0U, 0xA7U, 0xB2U, 0xB5U, 0xBCU, 0xBBU,
+    0x96U, 0x91U, 0x98U, 0x9FU, 0x8AU, 0x8DU, 0x84U, 0x83U,
+    0xDEU, 0xD9U, 0xD0U, 0xD7U, 0xC2U, 0xC5U, 0xCCU, 0xCBU,
+    0xE6U, 0xE1U, 0xE8U, 0xEFU, 0xFAU, 0xFDU, 0xF4U, 0xF3U
+};
 
 uint8_t pmbus_crc8_update(uint8_t crc, uint8_t data)
 {
-    crc ^= data;
-    for (uint8_t i = 0; i < 8; i++) {
-        if (crc & 0x80) {
-            crc = (crc << 1) ^ 0x07;
-        } else {
-            crc <<= 1;
-        }
-    }
-    return crc;
+    return crc8_table[crc ^ data];
 }
 
 uint8_t pmbus_crc8_calc(const uint8_t *data, uint8_t len)
 {
-    uint8_t crc = 0x00;
-    for (uint8_t i = 0; i < len; i++) {
+    uint8_t crc = 0U;
+    uint8_t i;
+    
+    for (i = 0U; i < len; i++) {
         crc = pmbus_crc8_update(crc, data[i]);
     }
+    
     return crc;
 }
-
 
 
 ################################################################################
@@ -42626,16 +43200,22 @@ FILE: pmbus_pec.h
 TYPE: .h
 ################################################################################
 
+// My_MCC_Config/src/pmbus_pec.h
+
 #ifndef PMBUS_PEC_H
 #define PMBUS_PEC_H
 
 #include <stdint.h>
 
+/*******************************************************************************
+ * PMBus PEC (Packet Error Checking) - CRC-8 per SMBus 2.0
+ * Polynomial: x^8 + x^2 + x^1 + 1 = 0x07
+ ******************************************************************************/
+
 uint8_t pmbus_crc8_update(uint8_t crc, uint8_t data);
-uint8_t pmbus_crc8_calc(const uint8_t *data, uint8_t len);
+uint8_t pmbus_crc8(const uint8_t *data, uint8_t len);
 
 #endif /* PMBUS_PEC_H */
-
 
 
 ################################################################################
@@ -42643,18 +43223,92 @@ FILE: tps25990.c
 TYPE: .c
 ################################################################################
 
+/**
+ * @file tps25990.c
+ * @brief TPS25990 eFuse driver implementation
+ * 
+ * Provides PMBus communication and status decoding for TPS25990 eFuse devices.
+ */
+
 #include "tps25990.h"
 #include "pmbus.h"
 #include "linear11.h"
-#include "stddef.h"
-#define CMD_STATUS_WORD 0x79U
-#define CMD_READ_VIN    0x88U
-#define CMD_READ_VOUT   0x8BU
-#define CMD_READ_IIN    0x89U
-#define CMD_READ_PIN    0x97U
-#define CMD_READ_TEMP   0x8DU
+#include <stddef.h>
 
-#define POWER_TOLERANCE 0.15f  /* 15 %% allowed difference */
+/* Power calculation tolerance (15%) */
+#define POWER_TOLERANCE 0.15f
+
+/**
+ * @brief Decode STATUS_BYTE from raw value
+ */
+static void decode_status_byte(uint8_t raw, tps25990_status_byte_t *out)
+{
+    out->busy        = (raw & TPS25990_SB_BUSY) != 0U;
+    out->fet_off     = (raw & TPS25990_SB_FET_OFF) != 0U;
+    out->vout_ov     = (raw & TPS25990_SB_VOUT_OV) != 0U;
+    out->iout_oc     = (raw & TPS25990_SB_IOUT_OC) != 0U;
+    out->vin_uv      = (raw & TPS25990_SB_VIN_UV) != 0U;
+    out->temp_fault  = (raw & TPS25990_SB_TEMP) != 0U;
+    out->cml_fault   = (raw & TPS25990_SB_CML) != 0U;
+    out->other_fault = (raw & TPS25990_SB_NONE_ABOVE) != 0U;
+}
+
+/**
+ * @brief Decode STATUS_IOUT from raw value
+ */
+static void decode_status_iout(uint8_t raw, tps25990_status_iout_t *out)
+{
+    out->oc_fault      = (raw & TPS25990_SIOUT_OC_FLT) != 0U;
+    out->oc_lv_fault   = (raw & TPS25990_SIOUT_OC_LV_FLT) != 0U;
+    out->oc_warning    = (raw & TPS25990_SIOUT_OC_WARN) != 0U;
+    out->current_limit = (raw & TPS25990_SIOUT_CL) != 0U;
+    out->pout_op_fault = (raw & TPS25990_SIOUT_POUT_OP_FLT) != 0U;
+    out->pout_op_warn  = (raw & TPS25990_SIOUT_POUT_OP_WARN) != 0U;
+}
+
+/**
+ * @brief Decode STATUS_TEMP from raw value
+ */
+static void decode_status_temp(uint8_t raw, tps25990_status_temp_t *out)
+{
+    out->ot_fault   = (raw & TPS25990_STEMP_OT_FLT) != 0U;
+    out->ot_warning = (raw & TPS25990_STEMP_OT_WARN) != 0U;
+}
+
+/**
+ * @brief Decode STATUS_IN from raw value
+ */
+static void decode_status_in(uint8_t raw, tps25990_status_in_t *out)
+{
+    out->vin_ov_fault = (raw & TPS25990_SIN_VIN_OV_FLT) != 0U;
+    out->vin_ov_warn  = (raw & TPS25990_SIN_VIN_OV_WARN) != 0U;
+    out->vin_uv_warn  = (raw & TPS25990_SIN_VIN_UV_WARN) != 0U;
+    out->oc_fault     = (raw & TPS25990_SIN_OC_FLT) != 0U;
+    out->vin_uv_fault = (raw & TPS25990_SIN_VIN_UV_FLT) != 0U;
+}
+
+/**
+ * @brief Decode STATUS_CML from raw value
+ */
+static void decode_status_cml(uint8_t raw, tps25990_status_cml_t *out)
+{
+    out->inv_cmd    = (raw & TPS25990_SCML_INV_CMD) != 0U;
+    out->inv_data   = (raw & TPS25990_SCML_INV_DATA) != 0U;
+    out->pec_fail   = (raw & TPS25990_SCML_PEC_FAIL) != 0U;
+    out->mem_fault  = (raw & TPS25990_SCML_MEM_FAULT) != 0U;
+    out->proc_fault = (raw & TPS25990_SCML_PROC_FAULT) != 0U;
+    out->comm_fault = (raw & TPS25990_SCML_COMM_FAULT) != 0U;
+}
+
+/**
+ * @brief Decode STATUS_MFR_SPECIFIC from raw value
+ */
+static void decode_status_mfr(uint8_t raw, tps25990_status_mfr_t *out)
+{
+    out->short_fault = (raw & TPS25990_SMFR_SHORT_FLT) != 0U;
+    out->hotswap     = (raw & TPS25990_SMFR_HOTSWAP) != 0U;
+    out->fet_health  = (raw & TPS25990_SMFR_FET_HEALTH) != 0U;
+}
 
 bool tps25990_read_all(uint8_t addr, tps25990_data_t *d)
 {
@@ -42662,28 +43316,154 @@ bool tps25990_read_all(uint8_t addr, tps25990_data_t *d)
         return false;
     }
 
-    if (pmbus_read_word(addr, CMD_STATUS_WORD, &d->status_word) != PMBUS_OK) return false;
-    if (pmbus_read_word(addr, CMD_READ_VIN, &d->vin_raw) != PMBUS_OK) return false;
-    if (pmbus_read_word(addr, CMD_READ_VOUT, &d->vout_raw) != PMBUS_OK) return false;
-    if (pmbus_read_word(addr, CMD_READ_IIN, &d->iin_raw) != PMBUS_OK) return false;
-    if (pmbus_read_word(addr, CMD_READ_PIN, &d->pin_raw) != PMBUS_OK) return false;
-    if (pmbus_read_word(addr, CMD_READ_TEMP, &d->temp_raw) != PMBUS_OK) return false;
+    if (pmbus_read_word(addr, TPS25990_CMD_STATUS_WORD, &d->status_word) != PMBUS_OK) {
+        return false;
+    }
+    if (pmbus_read_word(addr, TPS25990_CMD_READ_VIN, &d->vin_raw) != PMBUS_OK) {
+        return false;
+    }
+    if (pmbus_read_word(addr, TPS25990_CMD_READ_VOUT, &d->vout_raw) != PMBUS_OK) {
+        return false;
+    }
+    if (pmbus_read_word(addr, TPS25990_CMD_READ_IIN, &d->iin_raw) != PMBUS_OK) {
+        return false;
+    }
+    if (pmbus_read_word(addr, TPS25990_CMD_READ_PIN, &d->pin_raw) != PMBUS_OK) {
+        return false;
+    }
+    if (pmbus_read_word(addr, TPS25990_CMD_READ_TEMP, &d->temp_raw) != PMBUS_OK) {
+        return false;
+    }
 
+    /* Convert Linear11 to float values */
     d->vin_V  = linear11_to_float(d->vin_raw);
     d->vout_V = linear11_to_float(d->vout_raw);
     d->iin_A  = linear11_to_float(d->iin_raw);
     d->pin_W  = linear11_to_float(d->pin_raw);
     d->temp_C = linear11_to_float(d->temp_raw);
 
-    /* sanity check: P ~= V * I */
+    /* Sanity check: P ~= V * I */
     float expected = d->vin_V * d->iin_A;
     float diff = expected - d->pin_W;
-    if (diff < 0.0f) diff = -diff;
+    if (diff < 0.0f) {
+        diff = -diff;
+    }
 
     d->power_mismatch = (expected > 0.1f) &&
                         ((diff / expected) > POWER_TOLERANCE);
 
     return true;
+}
+
+bool tps25990_read_status_word(uint8_t addr, tps25990_status_word_t *out)
+{
+    uint16_t raw;
+    
+    if (out == NULL) {
+        return false;
+    }
+
+    if (pmbus_read_word(addr, TPS25990_CMD_STATUS_WORD, &raw) != PMBUS_OK) {
+        return false;
+    }
+
+    out->raw = raw;
+    
+    /* Decode high byte (bits 15:8) */
+    out->vout_status  = (raw & TPS25990_STATUS_WORD_VOUT) != 0U;
+    out->iout_status  = (raw & TPS25990_STATUS_WORD_IOUT) != 0U;
+    out->input_status = (raw & TPS25990_STATUS_WORD_INPUT) != 0U;
+    out->mfr_status   = (raw & TPS25990_STATUS_WORD_MFR) != 0U;
+    out->pgoodb       = (raw & TPS25990_STATUS_WORD_PGOODB) != 0U;
+    out->fet_off_hi   = (raw & TPS25990_STATUS_WORD_FET_OFF) != 0U;
+    
+    /* Decode low byte (STATUS_BYTE) */
+    decode_status_byte((uint8_t)(raw & 0xFFU), &out->status_byte);
+    
+    return true;
+}
+
+bool tps25990_read_full_status(uint8_t addr, tps25990_full_status_t *out)
+{
+    uint16_t word_raw;
+    uint8_t byte_raw;
+    
+    if (out == NULL) {
+        return false;
+    }
+
+    /* Read STATUS_WORD (also contains STATUS_BYTE as low byte) */
+    if (pmbus_read_word(addr, TPS25990_CMD_STATUS_WORD, &word_raw) != PMBUS_OK) {
+        return false;
+    }
+    
+    out->word.raw = word_raw;
+    out->word.vout_status  = (word_raw & TPS25990_STATUS_WORD_VOUT) != 0U;
+    out->word.iout_status  = (word_raw & TPS25990_STATUS_WORD_IOUT) != 0U;
+    out->word.input_status = (word_raw & TPS25990_STATUS_WORD_INPUT) != 0U;
+    out->word.mfr_status   = (word_raw & TPS25990_STATUS_WORD_MFR) != 0U;
+    out->word.pgoodb       = (word_raw & TPS25990_STATUS_WORD_PGOODB) != 0U;
+    out->word.fet_off_hi   = (word_raw & TPS25990_STATUS_WORD_FET_OFF) != 0U;
+    decode_status_byte((uint8_t)(word_raw & 0xFFU), &out->word.status_byte);
+
+    /* Read STATUS_IOUT */
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_IOUT, &byte_raw) != PMBUS_OK) {
+        return false;
+    }
+    decode_status_iout(byte_raw, &out->iout);
+
+    /* Read STATUS_TEMP */
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_TEMP, &byte_raw) != PMBUS_OK) {
+        return false;
+    }
+    decode_status_temp(byte_raw, &out->temp);
+
+    /* Read STATUS_IN */
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_IN, &byte_raw) != PMBUS_OK) {
+        return false;
+    }
+    decode_status_in(byte_raw, &out->input);
+
+    /* Read STATUS_CML */
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_CML, &byte_raw) != PMBUS_OK) {
+        return false;
+    }
+    decode_status_cml(byte_raw, &out->cml);
+
+    /* Read STATUS_MFR_SPECIFIC */
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_MFR, &byte_raw) != PMBUS_OK) {
+        return false;
+    }
+    decode_status_mfr(byte_raw, &out->mfr);
+
+    return true;
+}
+
+bool tps25990_is_fet_on(uint8_t addr)
+{
+    uint8_t status_byte;
+    
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_BYTE, &status_byte) != PMBUS_OK) {
+        return false;
+    }
+    
+    /* FET is ON if FET_OFF bit is NOT set */
+    return (status_byte & TPS25990_SB_FET_OFF) == 0U;
+}
+
+bool tps25990_turn_on(uint8_t addr)
+{
+    return pmbus_write_byte(addr, PMBUS_CMD_OPERATION, PMBUS_OPERATION_ON) == PMBUS_OK;
+}
+
+bool tps25990_turn_off(uint8_t addr)
+{
+    return pmbus_write_byte(addr, PMBUS_CMD_OPERATION, PMBUS_OPERATION_OFF) == PMBUS_OK;
+}
+
+bool tps25990_clear_faults(uint8_t addr)
+{
+    return pmbus_send_byte(addr, PMBUS_CMD_CLEAR_FAULTS) == PMBUS_OK;
 }
 
 
@@ -42693,14 +43473,239 @@ FILE: tps25990.h
 TYPE: .h
 ################################################################################
 
+/**
+ * @file tps25990.h
+ * @brief TPS25990 eFuse driver interface for PMBus telemetry and control
+ * 
+ * Provides structures and functions for communicating with TPS25990 eFuse
+ * devices via PMBus, including full STATUS_WORD decoding.
+ */
+
 #ifndef TPS25990_H
 #define TPS25990_H
 
 #include <stdint.h>
 #include <stdbool.h>
 
+/*============================================================================
+ * TPS25990 PMBus Command Codes
+ *===========================================================================*/
+
+/* Standard PMBus Telemetry Commands */
+#define TPS25990_CMD_STATUS_WORD    0x79U
+#define TPS25990_CMD_STATUS_BYTE    0x78U
+#define TPS25990_CMD_STATUS_VOUT    0x7AU
+#define TPS25990_CMD_STATUS_IOUT    0x7BU
+#define TPS25990_CMD_STATUS_IN      0x7CU
+#define TPS25990_CMD_STATUS_TEMP    0x7DU
+#define TPS25990_CMD_STATUS_CML     0x7EU
+#define TPS25990_CMD_STATUS_MFR     0x80U
+#define TPS25990_CMD_READ_VIN       0x88U
+#define TPS25990_CMD_READ_VOUT      0x8BU
+#define TPS25990_CMD_READ_IIN       0x89U
+#define TPS25990_CMD_READ_PIN       0x97U
+#define TPS25990_CMD_READ_TEMP      0x8DU
+
+/*============================================================================
+ * STATUS_WORD Bit Definitions (0x79)
+ * 
+ * STATUS_WORD is a 16-bit register where:
+ * - Bits [7:0] = STATUS_BYTE (low byte)
+ * - Bits [15:8] = High byte with additional status
+ *===========================================================================*/
+
+/* STATUS_WORD High Byte (bits 15:8) */
+#define TPS25990_STATUS_WORD_VOUT           (1U << 15)  /* VOUT status (reserved) */
+#define TPS25990_STATUS_WORD_IOUT           (1U << 14)  /* IOUT/POUT fault/warning */
+#define TPS25990_STATUS_WORD_INPUT          (1U << 13)  /* INPUT status (VIN_UV, VIN_OV, OC) */
+#define TPS25990_STATUS_WORD_MFR            (1U << 12)  /* MFR_SPECIFIC status */
+#define TPS25990_STATUS_WORD_PGOODB         (1U << 11)  /* Power Good status (active low) */
+#define TPS25990_STATUS_WORD_RESERVED_10    (1U << 10)  /* Reserved */
+#define TPS25990_STATUS_WORD_FET_OFF        (1U << 9)   /* Output FET is OFF */
+#define TPS25990_STATUS_WORD_RESERVED_8     (1U << 8)   /* Reserved */
+
+/* STATUS_WORD Low Byte / STATUS_BYTE (bits 7:0) */
+#define TPS25990_STATUS_BYTE_BUSY           (1U << 7)   /* Device busy */
+#define TPS25990_STATUS_BYTE_FET_OFF        (1U << 6)   /* Output FET is OFF */
+#define TPS25990_STATUS_BYTE_VOUT_OV        (1U << 5)   /* VOUT overvoltage (reserved) */
+#define TPS25990_STATUS_BYTE_IOUT_OC        (1U << 4)   /* IOUT overcurrent */
+#define TPS25990_STATUS_BYTE_VIN_UV         (1U << 3)   /* VIN undervoltage */
+#define TPS25990_STATUS_BYTE_TEMP           (1U << 2)   /* Temperature fault/warning */
+#define TPS25990_STATUS_BYTE_CML            (1U << 1)   /* Communication fault */
+#define TPS25990_STATUS_BYTE_NONE_ABOVE     (1U << 0)   /* None of the above (other fault) */
+
+/*============================================================================
+ * STATUS_BYTE Bit Definitions (0x78)
+ *===========================================================================*/
+
+#define TPS25990_SB_BUSY            (1U << 7)   /* Device busy */
+#define TPS25990_SB_FET_OFF         (1U << 6)   /* Output FET is OFF */
+#define TPS25990_SB_VOUT_OV         (1U << 5)   /* VOUT overvoltage (reserved) */
+#define TPS25990_SB_IOUT_OC         (1U << 4)   /* IOUT overcurrent */
+#define TPS25990_SB_VIN_UV          (1U << 3)   /* VIN undervoltage */
+#define TPS25990_SB_TEMP            (1U << 2)   /* Temperature fault/warning */
+#define TPS25990_SB_CML             (1U << 1)   /* Communication fault */
+#define TPS25990_SB_NONE_ABOVE      (1U << 0)   /* None of the above */
+
+/*============================================================================
+ * STATUS_IOUT Bit Definitions (0x7B)
+ *===========================================================================*/
+
+#define TPS25990_SIOUT_OC_FLT       (1U << 7)   /* Output overcurrent fault */
+#define TPS25990_SIOUT_OC_LV_FLT    (1U << 6)   /* Output overcurrent low-voltage fault */
+#define TPS25990_SIOUT_OC_WARN      (1U << 5)   /* Output overcurrent warning */
+#define TPS25990_SIOUT_RESERVED_4   (1U << 4)   /* Reserved */
+#define TPS25990_SIOUT_CL           (1U << 3)   /* Unit is in current limit mode */
+#define TPS25990_SIOUT_RESERVED_2   (1U << 2)   /* Reserved */
+#define TPS25990_SIOUT_POUT_OP_FLT  (1U << 1)   /* Output overpower fault */
+#define TPS25990_SIOUT_POUT_OP_WARN (1U << 0)   /* Output overpower warning */
+
+/*============================================================================
+ * STATUS_TEMP Bit Definitions (0x7D)
+ *===========================================================================*/
+
+#define TPS25990_STEMP_OT_FLT       (1U << 7)   /* Overtemperature fault */
+#define TPS25990_STEMP_OT_WARN      (1U << 6)   /* Overtemperature warning */
+#define TPS25990_STEMP_RESERVED_5   (1U << 5)   /* Reserved */
+#define TPS25990_STEMP_RESERVED_4   (1U << 4)   /* Reserved */
+#define TPS25990_STEMP_RESERVED_3   (1U << 3)   /* Reserved */
+#define TPS25990_STEMP_RESERVED_2   (1U << 2)   /* Reserved */
+#define TPS25990_STEMP_RESERVED_1   (1U << 1)   /* Reserved */
+#define TPS25990_STEMP_RESERVED_0   (1U << 0)   /* Reserved */
+
+/*============================================================================
+ * STATUS_IN Bit Definitions (0x7C) - Input Status
+ *===========================================================================*/
+
+#define TPS25990_SIN_VIN_OV_FLT     (1U << 7)   /* VIN overvoltage fault */
+#define TPS25990_SIN_VIN_OV_WARN    (1U << 6)   /* VIN overvoltage warning */
+#define TPS25990_SIN_VIN_UV_WARN    (1U << 5)   /* VIN undervoltage warning */
+#define TPS25990_SIN_OC_FLT         (1U << 4)   /* Input overcurrent fault (circuit breaker) */
+#define TPS25990_SIN_VIN_UV_FLT     (1U << 3)   /* VIN undervoltage fault */
+#define TPS25990_SIN_RESERVED_2     (1U << 2)   /* Reserved */
+#define TPS25990_SIN_RESERVED_1     (1U << 1)   /* Reserved */
+#define TPS25990_SIN_RESERVED_0     (1U << 0)   /* Reserved */
+
+/*============================================================================
+ * STATUS_CML Bit Definitions (0x7E) - Communication/Logic Fault
+ *===========================================================================*/
+
+#define TPS25990_SCML_INV_CMD       (1U << 7)   /* Invalid or unsupported command */
+#define TPS25990_SCML_INV_DATA      (1U << 6)   /* Invalid or unsupported data */
+#define TPS25990_SCML_PEC_FAIL      (1U << 5)   /* PEC check failed */
+#define TPS25990_SCML_MEM_FAULT     (1U << 4)   /* Memory fault detected */
+#define TPS25990_SCML_PROC_FAULT    (1U << 3)   /* Processor fault */
+#define TPS25990_SCML_RESERVED_2    (1U << 2)   /* Reserved */
+#define TPS25990_SCML_COMM_FAULT    (1U << 1)   /* Communication fault (other) */
+#define TPS25990_SCML_RESERVED_0    (1U << 0)   /* Reserved */
+
+/*============================================================================
+ * STATUS_MFR_SPECIFIC Bit Definitions (0x80)
+ *===========================================================================*/
+
+#define TPS25990_SMFR_SHORT_FLT     (1U << 7)   /* Short circuit fault */
+#define TPS25990_SMFR_HOTSWAP       (1U << 6)   /* Hotswap event */
+#define TPS25990_SMFR_FET_HEALTH    (1U << 5)   /* FET health monitor fault */
+#define TPS25990_SMFR_RESERVED_4    (1U << 4)   /* Reserved */
+#define TPS25990_SMFR_RESERVED_3    (1U << 3)   /* Reserved */
+#define TPS25990_SMFR_RESERVED_2    (1U << 2)   /* Reserved */
+#define TPS25990_SMFR_RESERVED_1    (1U << 1)   /* Reserved */
+#define TPS25990_SMFR_RESERVED_0    (1U << 0)   /* Reserved */
+
+/*============================================================================
+ * Decoded Status Structures
+ *===========================================================================*/
+
+/**
+ * @brief Decoded STATUS_BYTE fields
+ */
 typedef struct {
-    /* raw PMBus words */
+    bool busy;          /**< Device is busy */
+    bool fet_off;       /**< Output FET is off */
+    bool vout_ov;       /**< VOUT overvoltage (reserved) */
+    bool iout_oc;       /**< IOUT overcurrent */
+    bool vin_uv;        /**< VIN undervoltage */
+    bool temp_fault;    /**< Temperature fault or warning */
+    bool cml_fault;     /**< Communication fault */
+    bool other_fault;   /**< None of the above (other fault) */
+} tps25990_status_byte_t;
+
+/**
+ * @brief Decoded STATUS_IOUT fields
+ */
+typedef struct {
+    bool oc_fault;      /**< Overcurrent fault */
+    bool oc_lv_fault;   /**< Overcurrent low-voltage fault */
+    bool oc_warning;    /**< Overcurrent warning */
+    bool current_limit; /**< In current limit mode */
+    bool pout_op_fault; /**< Output overpower fault */
+    bool pout_op_warn;  /**< Output overpower warning */
+} tps25990_status_iout_t;
+
+/**
+ * @brief Decoded STATUS_TEMP fields
+ */
+typedef struct {
+    bool ot_fault;      /**< Overtemperature fault */
+    bool ot_warning;    /**< Overtemperature warning */
+} tps25990_status_temp_t;
+
+/**
+ * @brief Decoded STATUS_IN (input) fields
+ */
+typedef struct {
+    bool vin_ov_fault;  /**< VIN overvoltage fault */
+    bool vin_ov_warn;   /**< VIN overvoltage warning */
+    bool vin_uv_warn;   /**< VIN undervoltage warning */
+    bool oc_fault;      /**< Input overcurrent fault (circuit breaker) */
+    bool vin_uv_fault;  /**< VIN undervoltage fault */
+} tps25990_status_in_t;
+
+/**
+ * @brief Decoded STATUS_CML (communication/logic) fields
+ */
+typedef struct {
+    bool inv_cmd;       /**< Invalid command */
+    bool inv_data;      /**< Invalid data */
+    bool pec_fail;      /**< PEC check failed */
+    bool mem_fault;     /**< Memory fault */
+    bool proc_fault;    /**< Processor fault */
+    bool comm_fault;    /**< Communication fault */
+} tps25990_status_cml_t;
+
+/**
+ * @brief Decoded STATUS_MFR_SPECIFIC fields
+ */
+typedef struct {
+    bool short_fault;   /**< Short circuit fault */
+    bool hotswap;       /**< Hotswap event */
+    bool fet_health;    /**< FET health monitor fault */
+} tps25990_status_mfr_t;
+
+/**
+ * @brief Complete decoded STATUS_WORD with high byte flags
+ */
+typedef struct {
+    /* Raw values */
+    uint16_t raw;               /**< Raw STATUS_WORD value */
+    
+    /* High byte flags */
+    bool vout_status;           /**< VOUT status flag */
+    bool iout_status;           /**< IOUT/POUT status flag */
+    bool input_status;          /**< Input status flag */
+    bool mfr_status;            /**< Manufacturer-specific status */
+    bool pgoodb;                /**< Power good status (0=good) */
+    bool fet_off_hi;            /**< FET OFF from high byte */
+    
+    /* Low byte (STATUS_BYTE) decoded */
+    tps25990_status_byte_t status_byte;
+} tps25990_status_word_t;
+
+/**
+ * @brief Complete TPS25990 telemetry data structure
+ */
+typedef struct {
+    /* Raw PMBus words (Linear11 format) */
     uint16_t status_word;
     uint16_t vin_raw;
     uint16_t vout_raw;
@@ -42708,19 +43713,91 @@ typedef struct {
     uint16_t pin_raw;
     uint16_t temp_raw;
 
-    /* decoded values (SI units) */
-    float vin_V;
-    float vout_V;
-    float iin_A;
-    float pin_W;
-    float temp_C;
+    /* Decoded values (SI units) */
+    float vin_V;        /**< Input voltage in Volts */
+    float vout_V;       /**< Output voltage in Volts */
+    float iin_A;        /**< Input current in Amps */
+    float pin_W;        /**< Input power in Watts */
+    float temp_C;       /**< Temperature in Celsius */
 
-    /* sanity */
-    bool power_mismatch;
+    /* Sanity check result */
+    bool power_mismatch;    /**< True if P != V*I beyond tolerance */
 } tps25990_data_t;
 
+/**
+ * @brief Complete TPS25990 status structure with all decoded registers
+ */
+typedef struct {
+    tps25990_status_word_t word;    /**< Decoded STATUS_WORD */
+    tps25990_status_iout_t iout;    /**< Decoded STATUS_IOUT */
+    tps25990_status_temp_t temp;    /**< Decoded STATUS_TEMP */
+    tps25990_status_in_t input;     /**< Decoded STATUS_IN */
+    tps25990_status_cml_t cml;      /**< Decoded STATUS_CML */
+    tps25990_status_mfr_t mfr;      /**< Decoded STATUS_MFR_SPECIFIC */
+} tps25990_full_status_t;
+
+/*============================================================================
+ * Function Declarations
+ *===========================================================================*/
+
+/**
+ * @brief Read all telemetry data from a TPS25990 device
+ * 
+ * @param addr 7-bit I2C device address
+ * @param out Pointer to data structure to populate
+ * @return true on success, false on communication error
+ */
 bool tps25990_read_all(uint8_t addr, tps25990_data_t *out);
 
-#endif /* TPS25990_H */
+/**
+ * @brief Read and decode STATUS_WORD from a TPS25990 device
+ * 
+ * @param addr 7-bit I2C device address
+ * @param out Pointer to decoded status structure
+ * @return true on success, false on communication error
+ */
+bool tps25990_read_status_word(uint8_t addr, tps25990_status_word_t *out);
 
+/**
+ * @brief Read and decode all status registers from a TPS25990 device
+ * 
+ * @param addr 7-bit I2C device address
+ * @param out Pointer to full status structure
+ * @return true on success, false on communication error
+ */
+bool tps25990_read_full_status(uint8_t addr, tps25990_full_status_t *out);
+
+/**
+ * @brief Check if FET is currently on (output enabled)
+ * 
+ * @param addr 7-bit I2C device address
+ * @return true if FET is ON, false if OFF or error
+ */
+bool tps25990_is_fet_on(uint8_t addr);
+
+/**
+ * @brief Turn on the eFuse output
+ * 
+ * @param addr 7-bit I2C device address
+ * @return true on success, false on error
+ */
+bool tps25990_turn_on(uint8_t addr);
+
+/**
+ * @brief Turn off the eFuse output
+ * 
+ * @param addr 7-bit I2C device address
+ * @return true on success, false on error
+ */
+bool tps25990_turn_off(uint8_t addr);
+
+/**
+ * @brief Clear all fault status bits
+ * 
+ * @param addr 7-bit I2C device address
+ * @return true on success, false on error
+ */
+bool tps25990_clear_faults(uint8_t addr);
+
+#endif /* TPS25990_H */
 

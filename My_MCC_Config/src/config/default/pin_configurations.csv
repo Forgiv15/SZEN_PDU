@@ -45,9 +45,9 @@ Pin Number,Pin ID,Custom Name,Function,Mode, Direction,Latch,Pull Up,Pull Down,D
 53,PA28,GPIO_PA28,GPIO,Digital,In,n/a,Yes,No,NORMAL
 57,PA30,,Available,,,,,,NORMAL
 58,PA31,,Available,,,,,,NORMAL
-59,PB30,GPIO_FLTM,GPIO,Digital,In,n/a,No,No,NORMAL
-60,PB31,GPIO_FLT,GPIO,Digital,In,n/a,No,No,NORMAL
-61,PB00,GPIO_SDC_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
-62,PB01,GPIO_BSPD_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
-63,PB02,GPIO_BOTS_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
-64,PB03,GPIO_INERTIA_IN,GPIO,Digital,In,n/a,Yes,No,NORMAL
+59,PB30,FLTM,EIC_EXTINT14,Digital,In,n/a,Yes,No,NORMAL
+60,PB31,FLT,EIC_EXTINT15,Digital,In,n/a,Yes,No,NORMAL
+61,PB00,SDC,EIC_EXTINT0,Digital,In,n/a,Yes,No,NORMAL
+62,PB01,BSPD,EIC_EXTINT1,Digital,In,n/a,Yes,No,NORMAL
+63,PB02,BOTS,EIC_EXTINT2,Digital,In,n/a,Yes,No,NORMAL
+64,PB03,INERTIA,EIC_EXTINT3,Digital,In,n/a,Yes,No,NORMAL

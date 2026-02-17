@@ -21,7 +21,7 @@
 *******************************************************************************/
 //DOM-IGNORE-BEGIN
 /*******************************************************************************
-* Copyright (C) 2018 Microchip Technology Inc. and its subsidiaries.
+* Copyright (C) 2021 Microchip Technology Inc. and its subsidiaries.
 *
 * Subject to your compliance with these terms, you may use Microchip software
 * and any derivatives exclusively with Microchip products. It is your
@@ -100,21 +100,20 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer);
 uint8_t CAN0_TxFifoFreeLevelGet(void);
 bool CAN0_TxBufferIsBusy(uint8_t bufferNumber);
 bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFifo);
-uint8_t CAN0_TxEventFifoFillLevelGet(void);
 bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer);
-bool CAN0_RxBufferNumberGet(uint8_t* bufferNumber);
 bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage, CAN_RX_BUFFER *rxBuffer);
-uint8_t CAN0_RxFifoFillLevelGet(CAN_RX_FIFO_NUM rxFifoNum);
 CAN_ERROR CAN0_ErrorGet(void);
 void CAN0_ErrorCountGet(uint8_t *txErrorCount, uint8_t *rxErrorCount);
-bool CAN0_InterruptGet(CAN_INTERRUPT_MASK interruptMask);
-void CAN0_InterruptClear(CAN_INTERRUPT_MASK interruptMask);
 void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress);
 void CAN0_SleepModeEnter(void);
 void CAN0_SleepModeExit(void);
 bool CAN0_BitTimingCalculationGet(CAN_BIT_TIMING_SETUP *setup, CAN_BIT_TIMING *bitTiming);
 bool CAN0_BitTimingSet(CAN_BIT_TIMING *bitTiming);
-
+void CAN0_TxFifoCallbackRegister(CAN_TX_FIFO_CALLBACK callback, uintptr_t contextHandle);
+void CAN0_TxEventFifoCallbackRegister(CAN_TX_EVENT_FIFO_CALLBACK callback, uintptr_t contextHandle);
+void CAN0_RxBuffersCallbackRegister(CAN_TXRX_BUFFERS_CALLBACK callback, uintptr_t contextHandle);
+void CAN0_RxFifoCallbackRegister(CAN_RX_FIFO_NUM rxFifoNum, CAN_RX_FIFO_CALLBACK callback, uintptr_t contextHandle);
+void CAN0_CallbackRegister(CAN_CALLBACK callback, uintptr_t contextHandle);
 // DOM-IGNORE-BEGIN
 #ifdef __cplusplus  // Provide C++ Compatibility
     }

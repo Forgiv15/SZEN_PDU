@@ -1,0 +1,391 @@
+configVersion: 1.0.0
+componentName: eic
+coreVersion: 5.8.4
+device: PIC32CM5164JH01064
+library: []
+dependency:
+- dependencyPackage: class com.microchip.mcc.harmony.HarmonyModule
+  name: eic
+  type: module
+  version: ''
+- dependencyPackage: ''
+  name: csp
+  type: package
+  version: v3.23.0
+customDataClassName: com.microchip.utils_mh3.utils.persistence.CustomModuleData
+data:
+  attachments: {}
+  elementPosition:
+    attributes:
+      id: __ROOTVIEW
+    children:
+    - children:
+      - attributes:
+          id: eic
+          x: '292'
+          y: '52'
+        type: ElementPosition
+      type: ElementPositions
+    type: ComponentGraph
+  symbols:
+    EIC_ASYNCH:
+      attributes:
+        id: EIC_ASYNCH
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: '0'
+          type: Dynamic
+        type: Values
+      type: Hex
+    EIC_CHAN_0:
+      attributes:
+        id: EIC_CHAN_0
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CHAN_1:
+      attributes:
+        id: EIC_CHAN_1
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CHAN_14:
+      attributes:
+        id: EIC_CHAN_14
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CHAN_15:
+      attributes:
+        id: EIC_CHAN_15
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CHAN_2:
+      attributes:
+        id: EIC_CHAN_2
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CHAN_3:
+      attributes:
+        id: EIC_CHAN_3
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CONFIG_FILTEN_0:
+      attributes:
+        id: EIC_CONFIG_FILTEN_0
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CONFIG_FILTEN_14:
+      attributes:
+        id: EIC_CONFIG_FILTEN_14
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_CONFIG_SENSE_0:
+      attributes:
+        id: EIC_CONFIG_SENSE_0
+      children:
+      - children:
+        - attributes:
+            value: '1'
+          type: User
+        type: Values
+      type: KeyValueSet
+    EIC_CONFIG_SENSE_1:
+      attributes:
+        id: EIC_CONFIG_SENSE_1
+      children:
+      - children:
+        - attributes:
+            value: '1'
+          type: User
+        type: Values
+      type: KeyValueSet
+    EIC_CONFIG_SENSE_14:
+      attributes:
+        id: EIC_CONFIG_SENSE_14
+      children:
+      - children:
+        - attributes:
+            value: '2'
+          type: User
+        type: Values
+      type: KeyValueSet
+    EIC_CONFIG_SENSE_15:
+      attributes:
+        id: EIC_CONFIG_SENSE_15
+      children:
+      - children:
+        - attributes:
+            value: '1'
+          type: User
+        type: Values
+      type: KeyValueSet
+    EIC_CONFIG_SENSE_2:
+      attributes:
+        id: EIC_CONFIG_SENSE_2
+      children:
+      - children:
+        - attributes:
+            value: '1'
+          type: User
+        type: Values
+      type: KeyValueSet
+    EIC_CONFIG_SENSE_3:
+      attributes:
+        id: EIC_CONFIG_SENSE_3
+      children:
+      - children:
+        - attributes:
+            value: '1'
+          type: User
+        type: Values
+      type: KeyValueSet
+    EIC_DEBOUNCEN:
+      attributes:
+        id: EIC_DEBOUNCEN
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: '0'
+          type: Dynamic
+        type: Values
+      type: Hex
+    EIC_DEBOUNCEN_0:
+      attributes:
+        id: EIC_DEBOUNCEN_0
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_DEBOUNCEN_1:
+      attributes:
+        id: EIC_DEBOUNCEN_1
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_DEBOUNCEN_14:
+      attributes:
+        id: EIC_DEBOUNCEN_14
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_DEBOUNCEN_2:
+      attributes:
+        id: EIC_DEBOUNCEN_2
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_DEBOUNCEN_3:
+      attributes:
+        id: EIC_DEBOUNCEN_3
+      children:
+      - children:
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_EXTINTEO:
+      attributes:
+        id: EIC_EXTINTEO
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: '0'
+          type: Dynamic
+        type: Values
+      type: Hex
+    EIC_EXTINTEO_0:
+      attributes:
+        id: EIC_EXTINTEO_0
+      children:
+      - children:
+        - attributes:
+            value: 'false'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_INT:
+      attributes:
+        id: EIC_INT
+      children:
+      - children:
+        - attributes:
+            id: eic
+            value: '49167'
+          type: Dynamic
+        type: Values
+      type: Hex
+    EIC_INT_0:
+      attributes:
+        id: EIC_INT_0
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_INT_1:
+      attributes:
+        id: EIC_INT_1
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_INT_14:
+      attributes:
+        id: EIC_INT_14
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_INT_15:
+      attributes:
+        id: EIC_INT_15
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_INT_2:
+      attributes:
+        id: EIC_INT_2
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    EIC_INT_3:
+      attributes:
+        id: EIC_INT_3
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+  userData: {}
