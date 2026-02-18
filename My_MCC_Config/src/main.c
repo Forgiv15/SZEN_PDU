@@ -27,6 +27,7 @@
 #include <stdlib.h>                     // Defines EXIT_FAILURE
 #include "definitions.h"                // SYS function prototypes
 #include "peripheral/port/plib_port.h"
+#include "pdu.h"
 
 
 // *****************************************************************************
@@ -37,30 +38,39 @@
 
 int main ( void )
 {
+  uint32_t tick_count = 0U;
+  uint32_t last_100ms_tick = 0U;
+  uint32_t last_1s_tick = 0U;
+
     /* Initialize all modules */
     SYS_Initialize( NULL );
     SYSTICK_TimerStart();
-    GPIO_RLED_OutputEnable();
-    GPIO_BLED_OutputEnable();
-    GPIO_GLED_OutputEnable();
+
+  PDU_Init();
+
     while ( true )
     {
         /* Maintain state machines of all polled MPLAB Harmony modules. */
         SYS_Tasks();
-        GPIO_RLED_Set();
-        SYSTICK_DelayMs(1000);
-        GPIO_GLED_Set();
-        SYSTICK_DelayMs(1000);
-        GPIO_BLED_Set();
-        SYSTICK_DelayMs(1000);
-        
-        GPIO_RLED_Clear();
-        SYSTICK_DelayMs(1000);
-        GPIO_GLED_Clear();
-        SYSTICK_DelayMs(1000);
-        GPIO_BLED_Clear();
-        SYSTICK_DelayMs(1000);
-      }
+
+    if (SYSTICK_TimerPeriodHasExpired()) {
+      tick_count++;
+    }
+
+    if ((tick_count - last_1s_tick) >= 1000U)
+    {
+      last_1s_tick += 1000U;
+      (void)PDU_CANSendHeartbeat();
+    }
+
+    if ((tick_count - last_100ms_tick) >= 100U)
+    {
+      last_100ms_tick += 100U;
+
+      PDU_RunChecks();
+      PDU_PollAndSendTelemetry();
+    }
+  }
 
     /* Execution should not come here during normal operation */
     return ( EXIT_FAILURE );

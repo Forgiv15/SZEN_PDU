@@ -12,6 +12,12 @@
 #include "linear11.h"
 #include "definitions.h"
 
+/* Per-eFuse telemetry CAN base ID (0x500-0x507) */
+#define PDU_CAN_ID_EFUSE_BASE      0x500U
+#define PDU_CAN_ID_MCU_TELEM        0x520U
+#define PDU_CAN_STD_ID_SHIFT        18U
+#define PDU_CAN_TX_WAIT_LOOPS       50000UL
+
 /* TPS25990 PMBus I2C addresses for each eFuse channel */
 static const uint8_t tps_addr[PDU_NUM_EFUSES] =
 {
@@ -33,6 +39,157 @@ static const uint8_t tps_addr[PDU_NUM_EFUSES] =
 
 /* Delay loop count for FET state change (~1ms at typical CPU speed) */
 #define FET_STATE_DELAY_COUNT   10000UL
+
+static uint8_t can1_msg_ram[CAN1_MESSAGE_RAM_CONFIG_SIZE] __attribute__((aligned(4)));
+static uint8_t mcu_telem_test_byte = 0U;
+
+void PDU_CAN_Init(void)
+{
+    CAN1_MessageRAMConfigSet(can1_msg_ram);
+}
+
+static void pdu_enable_all_gpio_outputs(void)
+{
+    GPIO_HYBRID_OutputEnable();
+    GPIO_VENT1_OutputEnable();
+    GPIO_VENT2_OutputEnable();
+    GPIO_IGNINJ_OutputEnable();
+    GPIO_FUEL_P_OutputEnable();
+    GPIO_WP1_OutputEnable();
+    GPIO_WP2_OutputEnable();
+    GPIO_EN12V_E_OutputEnable();
+
+    GPIO_HYBRID_Set();
+    GPIO_VENT1_Set();
+    GPIO_VENT2_Set();
+    GPIO_IGNINJ_Set();
+    GPIO_FUEL_P_Set();
+    GPIO_WP1_Set();
+    GPIO_WP2_Set();
+    GPIO_EN12V_E_Set();
+}
+
+static bool pdu_enable_all_pmbus_outputs(void)
+{
+    uint8_t i;
+
+    for (i = 0U; i < PDU_NUM_EFUSES; i++)
+    {
+        if (pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, PMBUS_OPERATION_ON) != PMBUS_OK) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool pdu_can_recover_if_needed(void)
+{
+    CAN_ERROR err = CAN1_ErrorGet();
+
+    if ((err & CAN_ERROR_BUS_OFF) != 0U)
+    {
+        CAN1_Initialize();
+        CAN1_MessageRAMConfigSet(can1_msg_ram);
+    }
+
+    return true;
+}
+
+static uint32_t pdu_can_std_id_encode(uint16_t std_id)
+{
+    return ((uint32_t)(std_id & 0x7FFU)) << PDU_CAN_STD_ID_SHIFT;
+}
+
+static uint16_t pdu_float_to_u16_scaled(float value, float scale)
+{
+    float scaled = value * scale;
+
+    if (scaled <= 0.0f) {
+        return 0U;
+    }
+    if (scaled >= 65535.0f) {
+        return 65535U;
+    }
+
+    return (uint16_t)scaled;
+}
+
+static bool pdu_can_send_efuse_frame(uint16_t id, uint16_t mv, uint16_t ma, uint16_t p_10mw, uint16_t status_word)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U) {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(id);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(mv & 0xFFU);
+    tx.data[1] = (uint8_t)((mv >> 8) & 0xFFU);
+    tx.data[2] = (uint8_t)(ma & 0xFFU);
+    tx.data[3] = (uint8_t)((ma >> 8) & 0xFFU);
+    tx.data[4] = (uint8_t)(p_10mw & 0xFFU);
+    tx.data[5] = (uint8_t)((p_10mw >> 8) & 0xFFU);
+    tx.data[6] = (uint8_t)(status_word & 0xFFU);
+    tx.data[7] = (uint8_t)((status_word >> 8) & 0xFFU);
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_mcu_frame(uint8_t flt_bitmap, uint8_t system_flags, uint16_t shunt_ma, uint8_t test_byte)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U) {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_MCU_TELEM);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = flt_bitmap;
+    tx.data[1] = system_flags;
+    tx.data[2] = (uint8_t)(shunt_ma & 0xFFU);
+    tx.data[3] = (uint8_t)((shunt_ma >> 8) & 0xFFU);
+    tx.data[4] = test_byte;
+    tx.data[5] = 0U;
+    tx.data[6] = 0U;
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
 
 /**
  * @brief Software delay using busy-wait loop
@@ -182,6 +339,9 @@ void PDU_Init(void)
     /* Initialize ADC for IMON readings */
     PDU_ADC_Init();
 
+    /* Force-enable all GPIO output enable pins (active-high) */
+    pdu_enable_all_gpio_outputs();
+
     /* Configure LED GPIOs as outputs */
     GPIO_GLED_OutputEnable();
     GPIO_BLED_OutputEnable();
@@ -198,6 +358,13 @@ void PDU_RunChecks(void)
     bool v_ok = check_voltage_all();
     bool p_ok = check_power_all();
     bool f_ok = check_fet_all();
+    bool en_ok;
+
+    pdu_enable_all_gpio_outputs();
+    en_ok = pdu_enable_all_pmbus_outputs();
+    if (!en_ok) {
+        f_ok = false;
+    }
 
     /* 
      * Active-low LEDs:
@@ -230,4 +397,48 @@ void PDU_RunChecks(void)
     } else {
         GPIO_RLED_Toggle(); /* Fault - LED blinks */
     }
+}
+
+void PDU_PollAndSendTelemetry(void)
+{
+    uint8_t i;
+
+    for (i = 0U; i < PDU_NUM_EFUSES; i++)
+    {
+        tps25990_data_t data;
+        uint16_t mv = 0U;
+        uint16_t ma = 0U;
+        uint16_t p_10mw = 0U;
+        uint16_t status = 0xFFFFU;
+
+        if (tps25990_read_all(tps_addr[i], &data)) {
+            mv = pdu_float_to_u16_scaled(data.vout_V, 1000.0f);
+            ma = pdu_float_to_u16_scaled(data.iin_A, 1000.0f);
+            p_10mw = pdu_float_to_u16_scaled(data.pin_W, 100.0f);
+            status = data.status_word;
+        }
+
+        (void)pdu_can_send_efuse_frame((uint16_t)(PDU_CAN_ID_EFUSE_BASE + i), mv, ma, p_10mw, status);
+    }
+}
+
+bool PDU_CANSendHeartbeat(void)
+{
+    uint8_t flt_bitmap = 0U;
+
+    if (FLT_Get() != 0U) {
+        flt_bitmap |= 0x01U;
+    }
+    if (FLTM_Get() != 0U) {
+        flt_bitmap |= 0x02U;
+    }
+
+    mcu_telem_test_byte = (mcu_telem_test_byte == 0U) ? 255U : 0U;
+
+    return pdu_can_send_mcu_frame(flt_bitmap, 0U, 0U, mcu_telem_test_byte);
+}
+
+void PDU_SendMcuTelemetryTest(void)
+{
+    (void)PDU_CANSendHeartbeat();
 }

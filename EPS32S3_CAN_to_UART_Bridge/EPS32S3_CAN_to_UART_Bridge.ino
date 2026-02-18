@@ -1,97 +1,114 @@
 #include <Arduino.h>
 #include "driver/twai.h"
 
-/* =========================
-   PIN DEFINITIONS
-   ========================= */
+/* ================= PIN CONFIG ================= */
 #define CAN_TX_PIN 14
 #define CAN_RX_PIN 13
-#define CAN_RS_PIN 38   // Not used
+#define CAN_RS_PIN 38   // Set LOW to enable transceiver (for SN65HVD)
 
-/* =========================
-   UART SETTINGS
-   ========================= */
+/* ================= SETTINGS ================= */
 #define UART_BAUD 921600
 
-/* =========================
-   CAN SETTINGS
-   ========================= */
-#define CAN_BAUD_RATE TWAI_TIMING_CONFIG_500KBITS()
+/* ================= GLOBAL ================= */
+static bool can_ok = false;
 
-/* =========================
-   Setup
-   ========================= */
+/* ================= SETUP ================= */
 void setup()
 {
     Serial.begin(UART_BAUD);
-    delay(1000);
+    delay(500);
 
-    Serial.println("ESP32-S3 CAN Bridge Starting...");
+    Serial.println("\nESP32-S3 CAN Bridge Starting...");
 
+    /* Enable transceiver */
+    pinMode(CAN_RS_PIN, OUTPUT);
+    digitalWrite(CAN_RS_PIN, LOW);   // LOW = normal mode (for SN65HVD)
+
+    /* CAN Configuration */
     twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(
         (gpio_num_t)CAN_TX_PIN,
         (gpio_num_t)CAN_RX_PIN,
         TWAI_MODE_NORMAL
     );
 
-    twai_timing_config_t t_config = CAN_BAUD_RATE;
+    g_config.tx_queue_len = 4;
+    g_config.rx_queue_len = 32;
+
+    twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
     twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
-    if (twai_driver_install(&g_config, &t_config, &f_config) != ESP_OK)
+    esp_err_t err;
+
+    err = twai_driver_install(&g_config, &t_config, &f_config);
+    if (err != ESP_OK)
     {
-        Serial.println("CAN Driver Install Failed!");
-        while (1);
+        Serial.printf("Driver install failed: %d\n", err);
+        return;
     }
 
-    if (twai_start() != ESP_OK)
+    err = twai_start();
+    if (err != ESP_OK)
     {
-        Serial.println("CAN Start Failed!");
-        while (1);
+        Serial.printf("CAN start failed: %d\n", err);
+        return;
     }
 
-    Serial.println("CAN Initialized at 500kbps");
+    can_ok = true;
+    Serial.println("CAN Started @500kbps");
 }
 
-/* =========================
-   Loop
-   ========================= */
+/* ================= LOOP ================= */
 void loop()
 {
-    twai_message_t message;
-
-    if (twai_receive(&message, pdMS_TO_TICKS(100)) == ESP_OK)
+    if (!can_ok)
     {
-        uint32_t timestamp = millis();
+        delay(1000);
+        return;
+    }
 
-        Serial.print(timestamp);
+    twai_message_t msg;
+
+    if (twai_receive(&msg, pdMS_TO_TICKS(10)) == ESP_OK)
+    {
+        uint32_t ts = millis();
+
+        Serial.print(ts);
         Serial.print(",");
 
-        if (message.extd)
-        {
-            Serial.print("E,");
-        }
+        Serial.print(msg.extd ? "E," : "S,");
+
+        if (msg.extd)
+            Serial.printf("%08lX,", (unsigned long)(msg.identifier & 0x1FFFFFFF));
         else
-        {
-            Serial.print("S,");
-        }
+            Serial.printf("%03lX,", (unsigned long)(msg.identifier & 0x7FF));
 
-        Serial.print(message.identifier, HEX);
+        Serial.print(msg.data_length_code);
         Serial.print(",");
 
-        Serial.print(message.data_length_code);
-        Serial.print(",");
-
-        for (int i = 0; i < message.data_length_code; i++)
+        for (uint8_t i = 0; i < msg.data_length_code; i++)
         {
-            if (message.data[i] < 0x10)
-                Serial.print("0");
-
-            Serial.print(message.data[i], HEX);
-
-            if (i < message.data_length_code - 1)
+            Serial.printf("%02X", msg.data[i]);
+            if (i < msg.data_length_code - 1)
                 Serial.print(" ");
         }
 
         Serial.println();
+    }
+
+    /* Optional: monitor bus state */
+    static uint32_t last_status = 0;
+    if (millis() - last_status > 1000)
+    {
+        twai_status_info_t status;
+        twai_get_status_info(&status);
+
+        Serial.printf("State:%d RX:%d TX:%d ErrRX:%d ErrTX:%d\n",
+                      status.state,
+                      status.msgs_to_rx,
+                      status.msgs_to_tx,
+                      status.rx_error_counter,
+                      status.tx_error_counter);
+
+        last_status = millis();
     }
 }

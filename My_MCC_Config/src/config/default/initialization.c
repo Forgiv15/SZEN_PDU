@@ -45,6 +45,7 @@
 // *****************************************************************************
 #include "definitions.h"
 #include "device.h"
+#include "pdu.h"
 
 
 // ****************************************************************************
@@ -169,6 +170,7 @@ void SYS_Initialize ( void* data )
     EVSYS_Initialize();
 
     CAN1_Initialize();
+    PDU_CAN_Init();
 
 	SYSTICK_TimerInitialize();
     CAN0_Initialize();

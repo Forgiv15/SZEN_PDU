@@ -10,7 +10,7 @@ import time
 
 # ================= CONFIG =================
 
-SERIAL_PORT = "COM5"
+SERIAL_PORT = "COM8"
 BAUD_RATE = 921600
 
 EFUSE_COUNT = 8

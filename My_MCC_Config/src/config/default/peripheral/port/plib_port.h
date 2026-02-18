@@ -51,7 +51,7 @@
 #include "device.h"
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
+//#include <stddef.h>
 
 // DOM-IGNORE-BEGIN
 #ifdef __cplusplus  // Provide C++ Compatibility
@@ -109,8 +109,8 @@
 #define TS4_PIN                  PORT_PIN_PB07
 
 /*** Macros for 12V_FUSED_IMON pin ***/
-#define 12V_FUSED_IMON_Get()               (((PORT_REGS->GROUP[1].PORT_IN >> 8U)) & 0x01U)
-#define 12V_FUSED_IMON_PIN                  PORT_PIN_PB08
+#define Fused_12V_Get()               (((PORT_REGS->GROUP[1].PORT_IN >> 8U)) & 0x01U)
+#define Fused_12V_PIN                  PORT_PIN_PB08
 
 /*** Macros for WP1_IMON pin ***/
 #define WP1_IMON_Get()               (((PORT_REGS->GROUP[1].PORT_IN >> 9U)) & 0x01U)

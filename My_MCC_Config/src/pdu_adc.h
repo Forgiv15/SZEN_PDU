@@ -8,7 +8,7 @@
 #ifndef PDU_ADC_H
 #define PDU_ADC_H
 
-#include <stdint.h>
+//#include <stdint.h>
 #include <stdbool.h>
 
 /* External reference voltage for ADC */

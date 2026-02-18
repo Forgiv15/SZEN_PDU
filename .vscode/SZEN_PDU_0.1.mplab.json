@@ -3,9 +3,10 @@
     "configurations": [
         {
             "name": "default",
-            "id": "conf1",
+            "id": "",
             "device": "PIC32CM5164JH01064",
             "imagePath": "./out/SZEN_PDU_0.1/default.elf",
+            "toolProperties": "default-tool-base",
             "tool": "PICkit 5",
             "packs": [
                 {
@@ -20,10 +21,16 @@
                 }
             ],
             "fileSet": "default",
-            "toolchain": "default-XC32"
+            "toolchain": "default-XC32",
+            "userVariables": "default-uservariables"
         }
     ],
     "propertyGroups": [
+        {
+            "name": "default-uservariables",
+            "type": "uservariables",
+            "properties": {}
+        },
         {
             "name": "default-XC32",
             "type": "toolchain",
@@ -51,6 +58,16 @@
                     "My_MCC_Config/src/packs/PIC32CM5164JH01064_DFP"
                 ],
                 "linker.no-device-startup-code": "true"
+            }
+        },
+        {
+            "name": "default-tool-base",
+            "type": "tool",
+            "properties": {
+                "debugoptions.debug-startup": "Run",
+                "debugoptions.useswbreakpoints": false,
+                "poweroptions.powerenable": false,
+                "voltagevalue": "3.3"
             }
         }
     ],
