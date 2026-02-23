@@ -27,6 +27,14 @@ typedef enum
 #define PDU_NUM_EFUSES  8U
 
 /**
+ * @brief CAN debug-only mode
+ *
+ * 0U: normal behavior
+ * 1U: only send heartbeat CAN test frame in main loop
+ */
+#define PDU_CAN_DEBUG_ONLY_MODE  0U
+
+/**
  * @brief Initialize CAN1 runtime resources for PDU telemetry
  *
  * Must be called once after CAN1_Initialize().

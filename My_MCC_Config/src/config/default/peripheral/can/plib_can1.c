@@ -170,10 +170,17 @@ bool CAN1_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
     uint32_t bufferNumber = 0U;
     uint8_t  tfqpi = 0U;
     uint8_t  count = 0U;
+    uint8_t  txFifoFreeLevel = 0U;
     bool transmitFifo_event = false;
 
     if (!(((numberOfMessage < 1U) || (numberOfMessage > 1U)) || (txBuffer == NULL)))
     {
+        txFifoFreeLevel = (uint8_t)(CAN1_REGS->CAN_TXFQS & CAN_TXFQS_TFFL_Msk);
+        if (txFifoFreeLevel < numberOfMessage)
+        {
+            return false;
+        }
+
         tfqpi = (uint8_t)((CAN1_REGS->CAN_TXFQS & CAN_TXFQS_TFQPI_Msk) >> CAN_TXFQS_TFQPI_Pos);
 
         for (count = 0U; count < numberOfMessage; count++)
