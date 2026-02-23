@@ -18,6 +18,21 @@
 #define PDU_CAN_STD_ID_SHIFT        18U
 #define PDU_CAN_TX_WAIT_LOOPS       50000UL
 
+/* MCU telemetry debug flags (byte1 in 0x520 frame) */
+#define PDU_DBG_PMBUS_ENABLE_OK     (1U << 0)
+#define PDU_DBG_TLM_ALL_READ_OK     (1U << 1)
+#define PDU_DBG_ANY_READ_ERROR      (1U << 2)
+#define PDU_DBG_ANY_PEC_ERROR       (1U << 3)
+#define PDU_DBG_ANY_TIMEOUT         (1U << 4)
+#define PDU_DBG_ANY_NACK_OR_BUS     (1U << 5)
+#define PDU_DBG_ANY_ZERO_TELEM      (1U << 6)
+#define PDU_DBG_ANY_CAN_TX_FAIL     (1U << 7)
+
+/* MCU telemetry debug stage codes (byte4 in 0x520 frame) */
+#define PDU_STAGE_INIT              1U
+#define PDU_STAGE_RUNCHECKS         2U
+#define PDU_STAGE_TELEMETRY         3U
+
 /* TPS25990 PMBus I2C addresses for each eFuse channel */
 static const uint8_t tps_addr[PDU_NUM_EFUSES] =
 {
@@ -41,7 +56,11 @@ static const uint8_t tps_addr[PDU_NUM_EFUSES] =
 #define FET_STATE_DELAY_COUNT   10000UL
 
 static uint8_t can1_msg_ram[CAN1_MESSAGE_RAM_CONFIG_SIZE] __attribute__((aligned(4)));
-static uint8_t mcu_telem_test_byte = 0U;
+static uint8_t pdu_debug_flags = 0U;
+static uint8_t pdu_debug_stage = PDU_STAGE_INIT;
+static uint8_t pdu_last_error = 0U;
+static uint8_t pdu_fail_channel = 0xFFU;
+static uint8_t pdu_fail_command = 0U;
 
 void PDU_CAN_Init(void)
 {
@@ -153,7 +172,14 @@ static bool pdu_can_send_efuse_frame(uint16_t id, uint16_t mv, uint16_t ma, uint
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
 
-static bool pdu_can_send_mcu_frame(uint8_t flt_bitmap, uint8_t system_flags, uint16_t shunt_ma, uint8_t test_byte)
+static bool pdu_can_send_mcu_frame(
+    uint8_t flt_bitmap,
+    uint8_t system_flags,
+    uint16_t shunt_ma,
+    uint8_t dbg_stage,
+    uint8_t dbg_error,
+    uint8_t dbg_fail_channel,
+    uint8_t dbg_fail_command)
 {
     CAN_TX_BUFFER tx = { 0 };
     uint32_t wait_count = 0UL;
@@ -183,10 +209,10 @@ static bool pdu_can_send_mcu_frame(uint8_t flt_bitmap, uint8_t system_flags, uin
     tx.data[1] = system_flags;
     tx.data[2] = (uint8_t)(shunt_ma & 0xFFU);
     tx.data[3] = (uint8_t)((shunt_ma >> 8) & 0xFFU);
-    tx.data[4] = test_byte;
-    tx.data[5] = 0U;
-    tx.data[6] = 0U;
-    tx.data[7] = 0U;
+    tx.data[4] = dbg_stage;
+    tx.data[5] = dbg_error;
+    tx.data[6] = dbg_fail_channel;
+    tx.data[7] = dbg_fail_command;
 
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
@@ -204,6 +230,46 @@ static void delay_loop(uint32_t count)
     volatile uint32_t i;
     for (i = 0U; i < count; i++) {
         /* Busy wait - prevents compiler optimization */
+    }
+}
+
+static uint8_t pdu_pmbus_status_to_error_code(pmbus_status_t st)
+{
+    switch (st)
+    {
+        case PMBUS_OK:
+            return 0U;
+        case PMBUS_NACK:
+            return 1U;
+        case PMBUS_TIMEOUT:
+            return 2U;
+        case PMBUS_PEC_ERROR:
+            return 3U;
+        case PMBUS_BUS_ERROR:
+            return 4U;
+        default:
+            return 15U;
+    }
+}
+
+static void pdu_note_pmbus_error(pmbus_status_t st, uint8_t channel, uint8_t command)
+{
+    pdu_debug_flags |= PDU_DBG_ANY_READ_ERROR;
+    pdu_last_error = pdu_pmbus_status_to_error_code(st);
+    pdu_fail_channel = channel;
+    pdu_fail_command = command;
+
+    if (st == PMBUS_PEC_ERROR)
+    {
+        pdu_debug_flags |= PDU_DBG_ANY_PEC_ERROR;
+    }
+    else if (st == PMBUS_TIMEOUT)
+    {
+        pdu_debug_flags |= PDU_DBG_ANY_TIMEOUT;
+    }
+    else if ((st == PMBUS_NACK) || (st == PMBUS_BUS_ERROR))
+    {
+        pdu_debug_flags |= PDU_DBG_ANY_NACK_OR_BUS;
     }
 }
 
@@ -336,6 +402,8 @@ static bool check_fet_all(void)
 
 void PDU_Init(void)
 {
+    PDU_CAN_Init();
+
     /* Initialize ADC for IMON readings */
     PDU_ADC_Init();
 
@@ -351,6 +419,12 @@ void PDU_Init(void)
     GPIO_GLED_Set();
     GPIO_BLED_Set();
     GPIO_RLED_Set();
+
+    pdu_debug_flags = 0U;
+    pdu_debug_stage = PDU_STAGE_INIT;
+    pdu_last_error = 0U;
+    pdu_fail_channel = 0xFFU;
+    pdu_fail_command = 0U;
 }
 
 void PDU_RunChecks(void)
@@ -360,10 +434,16 @@ void PDU_RunChecks(void)
     bool f_ok = check_fet_all();
     bool en_ok;
 
+    pdu_debug_stage = PDU_STAGE_RUNCHECKS;
+
     pdu_enable_all_gpio_outputs();
     en_ok = pdu_enable_all_pmbus_outputs();
     if (!en_ok) {
         f_ok = false;
+        pdu_debug_flags &= (uint8_t)(~PDU_DBG_PMBUS_ENABLE_OK);
+        pdu_debug_flags |= PDU_DBG_ANY_READ_ERROR;
+    } else {
+        pdu_debug_flags |= PDU_DBG_PMBUS_ENABLE_OK;
     }
 
     /* 
@@ -402,43 +482,90 @@ void PDU_RunChecks(void)
 void PDU_PollAndSendTelemetry(void)
 {
     uint8_t i;
+    uint8_t flt_bitmap = 0U;
+    uint16_t shunt_ma = 0U;
+    bool all_reads_ok = true;
+
+    pdu_debug_stage = PDU_STAGE_TELEMETRY;
+    pdu_debug_flags &= (uint8_t)(~(PDU_DBG_TLM_ALL_READ_OK | PDU_DBG_ANY_ZERO_TELEM | PDU_DBG_ANY_CAN_TX_FAIL));
+    pdu_fail_channel = 0xFFU;
+    pdu_fail_command = 0U;
 
     for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
-        tps25990_data_t data;
+        uint16_t vraw = 0U;
+        uint16_t iraw = 0U;
+        uint16_t praw = 0U;
         uint16_t mv = 0U;
         uint16_t ma = 0U;
         uint16_t p_10mw = 0U;
         uint16_t status = 0xFFFFU;
+        pmbus_status_t st;
+        uint8_t failed_cmd = PMBUS_CMD_READ_VOUT;
 
-        if (tps25990_read_all(tps_addr[i], &data)) {
-            mv = pdu_float_to_u16_scaled(data.vout_V, 1000.0f);
-            ma = pdu_float_to_u16_scaled(data.iin_A, 1000.0f);
-            p_10mw = pdu_float_to_u16_scaled(data.pin_W, 100.0f);
-            status = data.status_word;
+        failed_cmd = PMBUS_CMD_READ_VOUT;
+        st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw);
+        if (st == PMBUS_OK)
+        {
+            failed_cmd = PMBUS_CMD_READ_IIN;
+            st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_IIN, &iraw);
+        }
+        if (st == PMBUS_OK)
+        {
+            failed_cmd = PMBUS_CMD_READ_PIN;
+            st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_PIN, &praw);
+        }
+        if (st == PMBUS_OK)
+        {
+            failed_cmd = PMBUS_CMD_STATUS_WORD;
+            st = pmbus_read_word(tps_addr[i], PMBUS_CMD_STATUS_WORD, &status);
         }
 
-        (void)pdu_can_send_efuse_frame((uint16_t)(PDU_CAN_ID_EFUSE_BASE + i), mv, ma, p_10mw, status);
+        if (st == PMBUS_OK)
+        {
+            mv = pdu_float_to_u16_scaled(linear11_to_float(vraw), 1000.0f);
+            ma = pdu_float_to_u16_scaled(linear11_to_float(iraw), 1000.0f);
+            p_10mw = pdu_float_to_u16_scaled(linear11_to_float(praw), 100.0f);
+
+            if ((mv == 0U) && (ma == 0U) && (p_10mw == 0U)) {
+                pdu_debug_flags |= PDU_DBG_ANY_ZERO_TELEM;
+            }
+        }
+        else
+        {
+            all_reads_ok = false;
+            pdu_note_pmbus_error(st, i, failed_cmd);
+        }
+
+        if (!pdu_can_send_efuse_frame((uint16_t)(PDU_CAN_ID_EFUSE_BASE + i), mv, ma, p_10mw, status)) {
+            pdu_debug_flags |= PDU_DBG_ANY_CAN_TX_FAIL;
+            pdu_last_error = 10U;
+        }
     }
-}
 
-bool PDU_CANSendHeartbeat(void)
-{
-    uint8_t flt_bitmap = 0U;
+    if (all_reads_ok) {
+        pdu_debug_flags |= PDU_DBG_TLM_ALL_READ_OK;
+    } else {
+        pdu_debug_flags &= (uint8_t)(~PDU_DBG_TLM_ALL_READ_OK);
+    }
 
-    if (FLT_Get() != 0U) {
+    /* FLT pins are active-low: HIGH = OK, LOW = fault */
+    if (FLT_Get() == 0U) {
         flt_bitmap |= 0x01U;
     }
-    if (FLTM_Get() != 0U) {
+    if (FLTM_Get() == 0U) {
         flt_bitmap |= 0x02U;
     }
 
-    mcu_telem_test_byte = (mcu_telem_test_byte == 0U) ? 255U : 0U;
-
-    return pdu_can_send_mcu_frame(flt_bitmap, 0U, 0U, mcu_telem_test_byte);
-}
-
-void PDU_SendMcuTelemetryTest(void)
-{
-    (void)PDU_CANSendHeartbeat();
+    if (!pdu_can_send_mcu_frame(
+            flt_bitmap,
+            pdu_debug_flags,
+            shunt_ma,
+            pdu_debug_stage,
+            pdu_last_error,
+            pdu_fail_channel,
+            pdu_fail_command)) {
+        pdu_debug_flags |= PDU_DBG_ANY_CAN_TX_FAIL;
+        pdu_last_error = 10U;
+    }
 }

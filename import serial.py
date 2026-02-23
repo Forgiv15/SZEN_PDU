@@ -60,8 +60,21 @@ current_history = [deque(maxlen=HISTORY_LENGTH) for _ in range(EFUSE_COUNT)]
 mcu_shunt = 0
 flt_bits = 0
 system_flags = 0
+mcu_dbg_stage = 0
+mcu_dbg_error = 0
+mcu_dbg_fail_channel = 0xFF
+mcu_dbg_fail_command = 0
 
-system_flag_names = [f"FLAG{i}" for i in range(8)]
+system_flag_names = [
+    "PMBUS_EN_OK",
+    "TLM_ALL_OK",
+    "READ_ERR",
+    "PEC_ERR",
+    "TIMEOUT",
+    "NACK_BUS",
+    "ZERO_TLM",
+    "CAN_TX_ERR",
+]
 
 selected_serial_port = SERIAL_PORT
 active_serial_port = None
@@ -141,6 +154,7 @@ def parse_bridge_can_line(line):
 
 def decode_can_frame(frame):
     global mcu_shunt, flt_bits, system_flags
+    global mcu_dbg_stage, mcu_dbg_error, mcu_dbg_fail_channel, mcu_dbg_fail_command
 
     can_id = frame["can_id"]
     data = frame["data"]
@@ -163,6 +177,12 @@ def decode_can_frame(frame):
         flt_bits = data[0]
         system_flags = data[1]
         mcu_shunt = data[2] | (data[3] << 8)
+
+        if len(data) >= 8:
+            mcu_dbg_stage = data[4]
+            mcu_dbg_error = data[5]
+            mcu_dbg_fail_channel = data[6]
+            mcu_dbg_fail_command = data[7]
 
 
 def decode_legacy_csv(line):
@@ -412,6 +432,12 @@ class PDUDashboard:
         self.shunt_label = tk.Label(mcu_frame, text="Shunt: 0 mA")
         self.shunt_label.pack()
 
+        self.mcu_debug_label = tk.Label(
+            mcu_frame,
+            text="Stage:0  Err:0  FailCh:-  FailCmd:0x00",
+        )
+        self.mcu_debug_label.pack()
+
         self.flt_labels = []
         flt_frame = tk.Frame(mcu_frame)
         flt_frame.pack()
@@ -523,6 +549,11 @@ class PDUDashboard:
 
         # MCU
         self.shunt_label.config(text=f"Shunt: {mcu_shunt} mA")
+
+        fail_ch_text = "-" if mcu_dbg_fail_channel == 0xFF else str(mcu_dbg_fail_channel)
+        self.mcu_debug_label.config(
+            text=f"Stage:{mcu_dbg_stage}  Err:{mcu_dbg_error}  FailCh:{fail_ch_text}  FailCmd:0x{mcu_dbg_fail_command:02X}"
+        )
 
         for i in range(2):
             active = (flt_bits >> i) & 1

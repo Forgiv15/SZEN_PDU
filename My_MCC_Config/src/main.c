@@ -41,7 +41,6 @@ int main ( void )
   uint32_t tick_count = 0U;
   uint32_t last_100ms_tick = 0U;
   uint32_t last_1s_tick = 0U;
-  uint32_t last_500ms_tick = 0U;
 
     /* Initialize all modules */
     SYS_Initialize( NULL );
@@ -58,27 +57,17 @@ int main ( void )
       tick_count++;
     }
 
-#if (PDU_CAN_DEBUG_ONLY_MODE == 1U)
-    if ((tick_count - last_500ms_tick) >= 500U)
-    {
-      last_500ms_tick += 500U;
-      (void)PDU_CANSendHeartbeat();
-    }
-#else
     if ((tick_count - last_1s_tick) >= 1000U)
     {
       last_1s_tick += 1000U;
-      (void)PDU_CANSendHeartbeat();
+      PDU_RunChecks();
     }
 
     if ((tick_count - last_100ms_tick) >= 100U)
     {
       last_100ms_tick += 100U;
-
-      PDU_RunChecks();
       PDU_PollAndSendTelemetry();
     }
-#endif
   }
 
     /* Execution should not come here during normal operation */

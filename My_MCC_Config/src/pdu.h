@@ -27,14 +27,6 @@ typedef enum
 #define PDU_NUM_EFUSES  8U
 
 /**
- * @brief CAN debug-only mode
- *
- * 0U: normal behavior
- * 1U: only send heartbeat CAN test frame in main loop
- */
-#define PDU_CAN_DEBUG_ONLY_MODE  0U
-
-/**
  * @brief Initialize CAN1 runtime resources for PDU telemetry
  *
  * Must be called once after CAN1_Initialize().
@@ -70,20 +62,5 @@ void PDU_RunChecks(void);
  * - bytes 6-7: STATUS_WORD (uint16)
  */
 void PDU_PollAndSendTelemetry(void);
-
-/**
- * @brief Send one independent CAN heartbeat frame on ID 0x520
- *
- * Returns true if frame was queued for transmission.
- */
-bool PDU_CANSendHeartbeat(void);
-
-/**
- * @brief Send MCU telemetry frame with independent CAN test signal
- *
- * Sends CAN ID 0x520 with a reserved-byte test pattern that toggles
- * between 0 and 255 on each call. This frame is independent of eFuse polling.
- */
-void PDU_SendMcuTelemetryTest(void);
 
 #endif /* PDU_H */
