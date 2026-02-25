@@ -24,6 +24,28 @@ WATERFALL_MAX_LINES = 500
 CAN_ID_EFUSE_BASE = 0x500
 CAN_ID_EFUSE_LAST = CAN_ID_EFUSE_BASE + EFUSE_COUNT - 1
 CAN_ID_MCU = 0x520
+CAN_ID_ERR_DETAIL_BASE = 0x530
+CAN_ID_ERR_DETAIL_LAST = CAN_ID_ERR_DETAIL_BASE + 7
+CAN_ID_I2C_SCAN_BASE = 0x540
+CAN_ID_I2C_SCAN_LAST = CAN_ID_I2C_SCAN_BASE + 13
+
+PMBUS_CMD_NAMES = {
+    0x79: "STATUS_WORD",
+    0x8B: "READ_VOUT",
+    0x89: "READ_IIN",
+    0x97: "READ_PIN",
+}
+
+MCU_ERR_NAMES = {
+    0: "OK",
+    1: "NACK",
+    2: "TIMEOUT",
+    3: "PEC",
+    4: "BUS",
+    10: "CAN_TX",
+    20: "ENABLE_FAIL",
+    21: "SCAN_NO_ACK",
+}
 
 # ================= STATUS WORD BIT NAMES =================
 
@@ -65,15 +87,18 @@ mcu_dbg_error = 0
 mcu_dbg_fail_channel = 0xFF
 mcu_dbg_fail_command = 0
 
+active_error_details = {}
+i2c_scan_blocks = {}
+
 system_flag_names = [
-    "PMBUS_EN_OK",
-    "TLM_ALL_OK",
-    "READ_ERR",
-    "PEC_ERR",
+    "ENABLE_FAIL",
+    "READ_FAIL",
+    "PEC_FAIL",
     "TIMEOUT",
-    "NACK_BUS",
-    "ZERO_TLM",
-    "CAN_TX_ERR",
+    "NACK_OR_BUS",
+    "ZERO_TELEM",
+    "CAN_TX_FAIL",
+    "SCAN_NO_ACK",
 ]
 
 selected_serial_port = SERIAL_PORT
@@ -155,6 +180,7 @@ def parse_bridge_can_line(line):
 def decode_can_frame(frame):
     global mcu_shunt, flt_bits, system_flags
     global mcu_dbg_stage, mcu_dbg_error, mcu_dbg_fail_channel, mcu_dbg_fail_command
+    global active_error_details, i2c_scan_blocks
 
     can_id = frame["can_id"]
     data = frame["data"]
@@ -183,6 +209,35 @@ def decode_can_frame(frame):
             mcu_dbg_error = data[5]
             mcu_dbg_fail_channel = data[6]
             mcu_dbg_fail_command = data[7]
+
+    elif CAN_ID_ERR_DETAIL_BASE <= can_id <= CAN_ID_ERR_DETAIL_LAST:
+        if len(data) < 6:
+            return
+
+        slot = can_id - CAN_ID_ERR_DETAIL_BASE
+        active = data[1] != 0
+
+        if active:
+            active_error_details[slot] = {
+                "err": data[2],
+                "channel": data[3],
+                "command": data[4],
+                "ttl": data[5],
+            }
+        else:
+            if slot in active_error_details:
+                del active_error_details[slot]
+
+    elif CAN_ID_I2C_SCAN_BASE <= can_id <= CAN_ID_I2C_SCAN_LAST:
+        if len(data) < 4:
+            return
+
+        slot = can_id - CAN_ID_I2C_SCAN_BASE
+        i2c_scan_blocks[slot] = {
+            "base": data[1],
+            "mask": data[2],
+            "found": data[3],
+        }
 
 
 def decode_legacy_csv(line):
@@ -353,6 +408,9 @@ class PDUDashboard:
         ttk.Button(serial_frame, text="Disconnect", command=self.disconnect_port).pack(
             side="left", padx=4
         )
+        ttk.Button(serial_frame, text="Serial Window", command=self.show_serial_window).pack(
+            side="left", padx=4
+        )
 
         self.serial_status_label = tk.Label(serial_frame, text="Status: Disconnected", fg="red")
         self.serial_status_label.pack(side="left", padx=10)
@@ -438,6 +496,24 @@ class PDUDashboard:
         )
         self.mcu_debug_label.pack()
 
+        self.mcu_debug_detail_label = tk.Label(
+            mcu_frame,
+            text="Error: OK",
+        )
+        self.mcu_debug_detail_label.pack()
+
+        error_list_frame = tk.LabelFrame(mcu_frame, text="Active Errors (1s TTL)")
+        error_list_frame.pack(fill="x", padx=4, pady=4)
+        self.error_listbox = tk.Listbox(error_list_frame, height=6)
+        self.error_listbox.pack(fill="x", padx=4, pady=4)
+
+        i2c_scan_frame = tk.LabelFrame(mcu_frame, text="I2C ACK Scan")
+        i2c_scan_frame.pack(fill="x", padx=4, pady=4)
+        self.i2c_scan_label = tk.Label(i2c_scan_frame, text="ACK addresses: waiting for scan frames...")
+        self.i2c_scan_label.pack(anchor="w", padx=4, pady=(2, 0))
+        self.i2c_scan_listbox = tk.Listbox(i2c_scan_frame, height=3)
+        self.i2c_scan_listbox.pack(fill="x", padx=4, pady=4)
+
         self.flt_labels = []
         flt_frame = tk.Frame(mcu_frame)
         flt_frame.pack()
@@ -489,11 +565,22 @@ class PDUDashboard:
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def build_serial_waterfall(self):
-        waterfall_frame = tk.LabelFrame(self.root, text="Serial Waterfall")
-        waterfall_frame.pack(fill="both", expand=True, pady=5)
+        self.waterfall_window = tk.Toplevel(self.root)
+        self.waterfall_window.title("Serial Monitor")
+        self.waterfall_window.geometry("900x400")
+        self.waterfall_window.protocol("WM_DELETE_WINDOW", self.waterfall_window.withdraw)
 
-        self.waterfall_text = tk.Text(waterfall_frame, height=10, state="disabled")
+        waterfall_frame = tk.LabelFrame(self.waterfall_window, text="Serial Waterfall")
+        waterfall_frame.pack(fill="both", expand=True, padx=6, pady=6)
+
+        self.waterfall_text = tk.Text(waterfall_frame, height=24, state="disabled")
         self.waterfall_text.pack(fill="both", expand=True)
+
+    def show_serial_window(self):
+        if self.waterfall_window.state() == "withdrawn":
+            self.waterfall_window.deiconify()
+        self.waterfall_window.lift()
+        self.waterfall_window.focus_force()
 
     def append_waterfall_line(self, text_line):
         self.waterfall_text.configure(state="normal")
@@ -551,9 +638,55 @@ class PDUDashboard:
         self.shunt_label.config(text=f"Shunt: {mcu_shunt} mA")
 
         fail_ch_text = "-" if mcu_dbg_fail_channel == 0xFF else str(mcu_dbg_fail_channel)
+        err_name = MCU_ERR_NAMES.get(mcu_dbg_error, f"UNK_{mcu_dbg_error}")
+        cmd_name = PMBUS_CMD_NAMES.get(mcu_dbg_fail_command, f"CMD_0x{mcu_dbg_fail_command:02X}")
+
         self.mcu_debug_label.config(
             text=f"Stage:{mcu_dbg_stage}  Err:{mcu_dbg_error}  FailCh:{fail_ch_text}  FailCmd:0x{mcu_dbg_fail_command:02X}"
         )
+        self.mcu_debug_detail_label.config(
+            text=f"Error:{err_name}  Command:{cmd_name}"
+        )
+
+        self.error_listbox.delete(0, tk.END)
+        if active_error_details:
+            for slot in sorted(active_error_details.keys()):
+                entry = active_error_details[slot]
+                err_code = entry["err"]
+                ch = entry["channel"]
+                cmd = entry["command"]
+                ttl = entry["ttl"]
+
+                err_name = MCU_ERR_NAMES.get(err_code, f"UNK_{err_code}")
+                cmd_name = PMBUS_CMD_NAMES.get(cmd, f"CMD_0x{cmd:02X}")
+                ch_text = "-" if ch == 0xFF else str(ch)
+
+                self.error_listbox.insert(
+                    tk.END,
+                    f"ERR:{err_code}({err_name}) CH:{ch_text} CMD:0x{cmd:02X}({cmd_name}) TTL:{ttl*100}ms",
+                )
+        else:
+            self.error_listbox.insert(tk.END, "No active errors")
+
+        ack_addresses = []
+        total_found = 0
+        for slot in sorted(i2c_scan_blocks.keys()):
+            block = i2c_scan_blocks[slot]
+            base = block["base"]
+            mask = block["mask"]
+            total_found = max(total_found, block["found"])
+            for bit in range(8):
+                if (mask >> bit) & 1:
+                    ack_addresses.append(base + bit)
+
+        ack_addresses = sorted(set(ack_addresses))
+        self.i2c_scan_listbox.delete(0, tk.END)
+        if ack_addresses:
+            self.i2c_scan_label.config(text=f"ACK addresses found: {len(ack_addresses)} (reported: {total_found})")
+            self.i2c_scan_listbox.insert(tk.END, " ".join([f"0x{addr:02X}" for addr in ack_addresses]))
+        else:
+            self.i2c_scan_label.config(text="ACK addresses: none")
+            self.i2c_scan_listbox.insert(tk.END, "No I2C ACKs in scan range")
 
         for i in range(2):
             active = (flt_bits >> i) & 1

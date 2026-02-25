@@ -15,18 +15,35 @@
 /* Per-eFuse telemetry CAN base ID (0x500-0x507) */
 #define PDU_CAN_ID_EFUSE_BASE      0x500U
 #define PDU_CAN_ID_MCU_TELEM        0x520U
+#define PDU_CAN_ID_ERR_DETAIL_BASE  0x530U
+#define PDU_CAN_ID_I2C_SCAN_BASE    0x540U
 #define PDU_CAN_STD_ID_SHIFT        18U
 #define PDU_CAN_TX_WAIT_LOOPS       50000UL
 
-/* MCU telemetry debug flags (byte1 in 0x520 frame) */
-#define PDU_DBG_PMBUS_ENABLE_OK     (1U << 0)
-#define PDU_DBG_TLM_ALL_READ_OK     (1U << 1)
-#define PDU_DBG_ANY_READ_ERROR      (1U << 2)
-#define PDU_DBG_ANY_PEC_ERROR       (1U << 3)
-#define PDU_DBG_ANY_TIMEOUT         (1U << 4)
-#define PDU_DBG_ANY_NACK_OR_BUS     (1U << 5)
-#define PDU_DBG_ANY_ZERO_TELEM      (1U << 6)
-#define PDU_DBG_ANY_CAN_TX_FAIL     (1U << 7)
+/* MCU telemetry active error bitmap (byte1 in 0x520 frame) */
+#define PDU_ERR_ENABLE_FAIL          (1U << 0)
+#define PDU_ERR_READ_FAIL            (1U << 1)
+#define PDU_ERR_PEC_FAIL             (1U << 2)
+#define PDU_ERR_TIMEOUT              (1U << 3)
+#define PDU_ERR_NACK_OR_BUS          (1U << 4)
+#define PDU_ERR_ZERO_TELEM           (1U << 5)
+#define PDU_ERR_CAN_TX_FAIL          (1U << 6)
+#define PDU_ERR_SCAN_NO_ACK          (1U << 7)
+
+/* Telemetry poll period is 100ms, so 10 polls = 1 second error TTL */
+#define PDU_ERROR_TTL_POLLS          10U
+
+/* Detailed error record list settings */
+#define PDU_ERROR_DETAIL_MAX         8U
+
+#define PDU_I2C_SCAN_START_ADDR      0x08U
+#define PDU_I2C_SCAN_END_ADDR        0x77U
+#define PDU_I2C_SCAN_FRAME_COUNT     14U
+
+/* Detailed error codes */
+#define PDU_ERR_CODE_CAN_TX_FAIL     10U
+#define PDU_ERR_CODE_ENABLE_FAIL     20U
+#define PDU_ERR_CODE_SCAN_NO_ACK     21U
 
 /* MCU telemetry debug stage codes (byte4 in 0x520 frame) */
 #define PDU_STAGE_INIT              1U
@@ -61,6 +78,23 @@ static uint8_t pdu_debug_stage = PDU_STAGE_INIT;
 static uint8_t pdu_last_error = 0U;
 static uint8_t pdu_fail_channel = 0xFFU;
 static uint8_t pdu_fail_command = 0U;
+static uint8_t pdu_error_ttl[8] = { 0U };
+
+typedef struct
+{
+    bool active;
+    uint8_t err;
+    uint8_t channel;
+    uint8_t command;
+    uint8_t ttl;
+} pdu_error_detail_t;
+
+static pdu_error_detail_t pdu_error_details[PDU_ERROR_DETAIL_MAX];
+static uint8_t pdu_i2c_scan_masks[PDU_I2C_SCAN_FRAME_COUNT];
+static uint8_t pdu_i2c_scan_found = 0U;
+static uint8_t pdu_i2c_scan_masks_last[PDU_I2C_SCAN_FRAME_COUNT];
+static uint8_t pdu_i2c_scan_found_last = 0xFFU;
+static uint8_t pdu_i2c_scan_report_div = 0U;
 
 void PDU_CAN_Init(void)
 {
@@ -252,24 +286,324 @@ static uint8_t pdu_pmbus_status_to_error_code(pmbus_status_t st)
     }
 }
 
+static void pdu_error_set(uint8_t error_bits)
+{
+    uint8_t bit;
+    for (bit = 0U; bit < 8U; bit++)
+    {
+        uint8_t mask = (uint8_t)(1U << bit);
+        if ((error_bits & mask) != 0U)
+        {
+            pdu_error_ttl[bit] = PDU_ERROR_TTL_POLLS;
+        }
+    }
+}
+
+static void pdu_error_age(void)
+{
+    uint8_t bit;
+    for (bit = 0U; bit < 8U; bit++)
+    {
+        if (pdu_error_ttl[bit] > 0U)
+        {
+            pdu_error_ttl[bit]--;
+        }
+    }
+}
+
+static uint8_t pdu_error_bitmap_get(void)
+{
+    uint8_t bit;
+    uint8_t bitmap = 0U;
+    for (bit = 0U; bit < 8U; bit++)
+    {
+        if (pdu_error_ttl[bit] > 0U)
+        {
+            bitmap |= (uint8_t)(1U << bit);
+        }
+    }
+    return bitmap;
+}
+
+static void pdu_error_details_clear(void)
+{
+    uint8_t i;
+    for (i = 0U; i < PDU_ERROR_DETAIL_MAX; i++)
+    {
+        pdu_error_details[i].active = false;
+        pdu_error_details[i].err = 0U;
+        pdu_error_details[i].channel = 0xFFU;
+        pdu_error_details[i].command = 0U;
+        pdu_error_details[i].ttl = 0U;
+    }
+}
+
+static void pdu_error_details_age(void)
+{
+    uint8_t i;
+    for (i = 0U; i < PDU_ERROR_DETAIL_MAX; i++)
+    {
+        if (pdu_error_details[i].active)
+        {
+            if (pdu_error_details[i].ttl > 0U)
+            {
+                pdu_error_details[i].ttl--;
+            }
+            if (pdu_error_details[i].ttl == 0U)
+            {
+                pdu_error_details[i].active = false;
+            }
+        }
+    }
+}
+
+static void pdu_error_details_upsert(uint8_t err, uint8_t channel, uint8_t command)
+{
+    uint8_t i;
+    uint8_t free_index = 0xFFU;
+    uint8_t replace_index = 0U;
+    uint8_t min_ttl = 0xFFU;
+
+    for (i = 0U; i < PDU_ERROR_DETAIL_MAX; i++)
+    {
+        if (pdu_error_details[i].active)
+        {
+            if ((pdu_error_details[i].err == err) &&
+                (pdu_error_details[i].channel == channel) &&
+                (pdu_error_details[i].command == command))
+            {
+                pdu_error_details[i].ttl = PDU_ERROR_TTL_POLLS;
+                return;
+            }
+
+            if (pdu_error_details[i].ttl < min_ttl)
+            {
+                min_ttl = pdu_error_details[i].ttl;
+                replace_index = i;
+            }
+        }
+        else if (free_index == 0xFFU)
+        {
+            free_index = i;
+        }
+    }
+
+    i = (free_index != 0xFFU) ? free_index : replace_index;
+    pdu_error_details[i].active = true;
+    pdu_error_details[i].err = err;
+    pdu_error_details[i].channel = channel;
+    pdu_error_details[i].command = command;
+    pdu_error_details[i].ttl = PDU_ERROR_TTL_POLLS;
+}
+
+static bool pdu_can_send_error_detail_frame(uint8_t slot)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+    pdu_error_detail_t *entry;
+
+    if (slot >= PDU_ERROR_DETAIL_MAX)
+    {
+        return false;
+    }
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    entry = &pdu_error_details[slot];
+
+    tx.id = pdu_can_std_id_encode((uint16_t)(PDU_CAN_ID_ERR_DETAIL_BASE + slot));
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = slot;
+    tx.data[1] = entry->active ? 1U : 0U;
+    tx.data[2] = entry->err;
+    tx.data[3] = entry->channel;
+    tx.data[4] = entry->command;
+    tx.data[5] = entry->ttl;
+    tx.data[6] = 0U;
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static void pdu_i2c_scan_update(void)
+{
+    uint8_t found_addrs[128];
+    uint8_t n_found = 0U;
+    uint8_t i;
+
+    for (i = 0U; i < PDU_I2C_SCAN_FRAME_COUNT; i++)
+    {
+        pdu_i2c_scan_masks[i] = 0U;
+    }
+
+    /*
+     * PIC32CM SERCOM I2C errata: status error bits are not always auto-cleared.
+     * Force a clean controller state before scanning.
+     */
+    SERCOM1_I2C_TransferAbort();
+
+    if (!SERCOM1_I2C_BusScan(PDU_I2C_SCAN_START_ADDR, PDU_I2C_SCAN_END_ADDR, found_addrs, &n_found))
+    {
+        pdu_error_set(PDU_ERR_NACK_OR_BUS);
+        pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, 0xFEU);
+        pdu_i2c_scan_found = 0U;
+        return;
+    }
+
+    pdu_i2c_scan_found = n_found;
+
+    if (n_found == 0U)
+    {
+        pdu_error_set(PDU_ERR_SCAN_NO_ACK);
+        pdu_error_details_upsert(PDU_ERR_CODE_SCAN_NO_ACK, 0xFFU, 0xFDU);
+    }
+
+    for (i = 0U; i < n_found; i++)
+    {
+        uint8_t addr = found_addrs[i];
+        if ((addr >= PDU_I2C_SCAN_START_ADDR) && (addr <= PDU_I2C_SCAN_END_ADDR))
+        {
+            uint8_t offset = (uint8_t)(addr - PDU_I2C_SCAN_START_ADDR);
+            uint8_t frame = (uint8_t)(offset / 8U);
+            uint8_t bit = (uint8_t)(offset % 8U);
+            pdu_i2c_scan_masks[frame] |= (uint8_t)(1U << bit);
+        }
+    }
+}
+
+static bool pdu_can_send_i2c_scan_frame(uint8_t slot)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+    uint8_t base_addr;
+
+    if (slot >= PDU_I2C_SCAN_FRAME_COUNT)
+    {
+        return false;
+    }
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    base_addr = (uint8_t)(PDU_I2C_SCAN_START_ADDR + (slot * 8U));
+
+    tx.id = pdu_can_std_id_encode((uint16_t)(PDU_CAN_ID_I2C_SCAN_BASE + slot));
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = slot;
+    tx.data[1] = base_addr;
+    tx.data[2] = pdu_i2c_scan_masks[slot];
+    tx.data[3] = pdu_i2c_scan_found;
+    tx.data[4] = PDU_I2C_SCAN_START_ADDR;
+    tx.data[5] = PDU_I2C_SCAN_END_ADDR;
+    tx.data[6] = 0U;
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static void pdu_i2c_scan_report_send_all(void)
+{
+    uint8_t slot;
+    for (slot = 0U; slot < PDU_I2C_SCAN_FRAME_COUNT; slot++)
+    {
+        (void)pdu_can_send_i2c_scan_frame(slot);
+    }
+}
+
+static void pdu_i2c_scan_report_if_needed(void)
+{
+    uint8_t slot;
+    bool changed = false;
+
+    for (slot = 0U; slot < PDU_I2C_SCAN_FRAME_COUNT; slot++)
+    {
+        if (pdu_i2c_scan_masks[slot] != pdu_i2c_scan_masks_last[slot])
+        {
+            changed = true;
+            break;
+        }
+    }
+
+    if (pdu_i2c_scan_found != pdu_i2c_scan_found_last)
+    {
+        changed = true;
+    }
+
+    pdu_i2c_scan_report_div++;
+    if (changed || (pdu_i2c_scan_report_div >= 10U))
+    {
+        pdu_i2c_scan_report_send_all();
+        pdu_i2c_scan_report_div = 0U;
+
+        for (slot = 0U; slot < PDU_I2C_SCAN_FRAME_COUNT; slot++)
+        {
+            pdu_i2c_scan_masks_last[slot] = pdu_i2c_scan_masks[slot];
+        }
+        pdu_i2c_scan_found_last = pdu_i2c_scan_found;
+    }
+}
+
 static void pdu_note_pmbus_error(pmbus_status_t st, uint8_t channel, uint8_t command)
 {
-    pdu_debug_flags |= PDU_DBG_ANY_READ_ERROR;
-    pdu_last_error = pdu_pmbus_status_to_error_code(st);
-    pdu_fail_channel = channel;
-    pdu_fail_command = command;
+    uint8_t err_code;
+
+    err_code = pdu_pmbus_status_to_error_code(st);
+
+    pdu_error_set(PDU_ERR_READ_FAIL);
+    pdu_error_details_upsert(err_code, channel, command);
+    if (pdu_fail_channel == 0xFFU)
+    {
+        pdu_last_error = err_code;
+        pdu_fail_channel = channel;
+        pdu_fail_command = command;
+    }
 
     if (st == PMBUS_PEC_ERROR)
     {
-        pdu_debug_flags |= PDU_DBG_ANY_PEC_ERROR;
+        pdu_error_set(PDU_ERR_PEC_FAIL);
     }
     else if (st == PMBUS_TIMEOUT)
     {
-        pdu_debug_flags |= PDU_DBG_ANY_TIMEOUT;
+        pdu_error_set(PDU_ERR_TIMEOUT);
     }
     else if ((st == PMBUS_NACK) || (st == PMBUS_BUS_ERROR))
     {
-        pdu_debug_flags |= PDU_DBG_ANY_NACK_OR_BUS;
+        pdu_error_set(PDU_ERR_NACK_OR_BUS);
     }
 }
 
@@ -402,6 +736,8 @@ static bool check_fet_all(void)
 
 void PDU_Init(void)
 {
+    uint8_t bit;
+
     PDU_CAN_Init();
 
     /* Initialize ADC for IMON readings */
@@ -425,6 +761,13 @@ void PDU_Init(void)
     pdu_last_error = 0U;
     pdu_fail_channel = 0xFFU;
     pdu_fail_command = 0U;
+
+    for (bit = 0U; bit < 8U; bit++)
+    {
+        pdu_error_ttl[bit] = 0U;
+    }
+
+    pdu_error_details_clear();
 }
 
 void PDU_RunChecks(void)
@@ -440,10 +783,8 @@ void PDU_RunChecks(void)
     en_ok = pdu_enable_all_pmbus_outputs();
     if (!en_ok) {
         f_ok = false;
-        pdu_debug_flags &= (uint8_t)(~PDU_DBG_PMBUS_ENABLE_OK);
-        pdu_debug_flags |= PDU_DBG_ANY_READ_ERROR;
-    } else {
-        pdu_debug_flags |= PDU_DBG_PMBUS_ENABLE_OK;
+        pdu_error_set(PDU_ERR_ENABLE_FAIL);
+        pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PMBUS_CMD_OPERATION);
     }
 
     /* 
@@ -482,14 +823,19 @@ void PDU_RunChecks(void)
 void PDU_PollAndSendTelemetry(void)
 {
     uint8_t i;
+    uint8_t detail_slot;
     uint8_t flt_bitmap = 0U;
     uint16_t shunt_ma = 0U;
-    bool all_reads_ok = true;
 
     pdu_debug_stage = PDU_STAGE_TELEMETRY;
-    pdu_debug_flags &= (uint8_t)(~(PDU_DBG_TLM_ALL_READ_OK | PDU_DBG_ANY_ZERO_TELEM | PDU_DBG_ANY_CAN_TX_FAIL));
+    pdu_error_age();
+    pdu_error_details_age();
     pdu_fail_channel = 0xFFU;
     pdu_fail_command = 0U;
+    pdu_last_error = 0U;
+
+    pdu_i2c_scan_update();
+    pdu_i2c_scan_report_if_needed();
 
     for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
@@ -528,26 +874,27 @@ void PDU_PollAndSendTelemetry(void)
             p_10mw = pdu_float_to_u16_scaled(linear11_to_float(praw), 100.0f);
 
             if ((mv == 0U) && (ma == 0U) && (p_10mw == 0U)) {
-                pdu_debug_flags |= PDU_DBG_ANY_ZERO_TELEM;
+                pdu_error_set(PDU_ERR_ZERO_TELEM);
             }
         }
         else
         {
-            all_reads_ok = false;
             pdu_note_pmbus_error(st, i, failed_cmd);
         }
 
         if (!pdu_can_send_efuse_frame((uint16_t)(PDU_CAN_ID_EFUSE_BASE + i), mv, ma, p_10mw, status)) {
-            pdu_debug_flags |= PDU_DBG_ANY_CAN_TX_FAIL;
-            pdu_last_error = 10U;
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, i, 0x00U);
+            if (pdu_fail_channel == 0xFFU)
+            {
+                pdu_last_error = PDU_ERR_CODE_CAN_TX_FAIL;
+                pdu_fail_channel = i;
+                pdu_fail_command = 0x00U;
+            }
         }
     }
 
-    if (all_reads_ok) {
-        pdu_debug_flags |= PDU_DBG_TLM_ALL_READ_OK;
-    } else {
-        pdu_debug_flags &= (uint8_t)(~PDU_DBG_TLM_ALL_READ_OK);
-    }
+    pdu_debug_flags = pdu_error_bitmap_get();
 
     /* FLT pins are active-low: HIGH = OK, LOW = fault */
     if (FLT_Get() == 0U) {
@@ -565,7 +912,13 @@ void PDU_PollAndSendTelemetry(void)
             pdu_last_error,
             pdu_fail_channel,
             pdu_fail_command)) {
-        pdu_debug_flags |= PDU_DBG_ANY_CAN_TX_FAIL;
-        pdu_last_error = 10U;
+        pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        pdu_debug_flags = pdu_error_bitmap_get();
+        pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, 0x00U);
+    }
+
+    for (detail_slot = 0U; detail_slot < PDU_ERROR_DETAIL_MAX; detail_slot++)
+    {
+        (void)pdu_can_send_error_detail_frame(detail_slot);
     }
 }

@@ -104,23 +104,13 @@ pmbus_status_t pmbus_write_word(uint8_t addr, uint8_t command, uint16_t data)
 pmbus_status_t pmbus_read_byte(uint8_t addr, uint8_t command, uint8_t *out)
 {
     uint8_t rx[2];  /* data byte + PEC */
+    uint8_t cmd = command;
     uint8_t crc = 0U;
     uint8_t addr_w = (uint8_t)(addr << 1U);        /* Write address */
     uint8_t addr_r = (uint8_t)((addr << 1U) | 1U); /* Read address */
 
-    /* Send command byte */
-    if (!SERCOM1_I2C_Write(addr, &command, 1U)) {
-        return PMBUS_BUS_ERROR;
-    }
-    if (!i2c_wait()) {
-        return PMBUS_TIMEOUT;
-    }
-    if (SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE) {
-        return PMBUS_NACK;
-    }
-
-    /* Read data byte + PEC */
-    if (!SERCOM1_I2C_Read(addr, rx, sizeof(rx))) {
+    /* PMBus read-byte transaction with repeated-start */
+    if (!SERCOM1_I2C_WriteRead(addr, &cmd, 1U, rx, sizeof(rx))) {
         return PMBUS_BUS_ERROR;
     }
     if (!i2c_wait()) {
@@ -147,23 +137,13 @@ pmbus_status_t pmbus_read_byte(uint8_t addr, uint8_t command, uint8_t *out)
 pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out)
 {
     uint8_t rx[3];  /* data_lo + data_hi + PEC */
+    uint8_t cmd = command;
     uint8_t crc = 0U;
     uint8_t addr_w = (uint8_t)(addr << 1U);        /* Write address */
     uint8_t addr_r = (uint8_t)((addr << 1U) | 1U); /* Read address */
 
-    /* Send command byte */
-    if (!SERCOM1_I2C_Write(addr, &command, 1U)) {
-        return PMBUS_BUS_ERROR;
-    }
-    if (!i2c_wait()) {
-        return PMBUS_TIMEOUT;
-    }
-    if (SERCOM1_I2C_ErrorGet() != SERCOM_I2C_ERROR_NONE) {
-        return PMBUS_NACK;
-    }
-
-    /* Read data word (2 bytes) + PEC */
-    if (!SERCOM1_I2C_Read(addr, rx, sizeof(rx))) {
+    /* PMBus read-word transaction with repeated-start */
+    if (!SERCOM1_I2C_WriteRead(addr, &cmd, 1U, rx, sizeof(rx))) {
         return PMBUS_BUS_ERROR;
     }
     if (!i2c_wait()) {
