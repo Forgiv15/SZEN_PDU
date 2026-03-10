@@ -303,3 +303,43 @@ bool tps25990_clear_faults(uint8_t addr)
 {
     return pmbus_send_byte(addr, PMBUS_CMD_CLEAR_FAULTS) == PMBUS_OK;
 }
+
+bool tps25990_unlock_writes(uint8_t addr)
+{
+    return pmbus_write_byte(addr, TPS25990_CMD_MFR_WRITE_PROTECT, TPS25990_MFR_WRITE_PROTECT_UNLOCK) == PMBUS_OK;
+}
+
+bool tps25990_lock_writes(uint8_t addr)
+{
+    return pmbus_write_byte(addr, TPS25990_CMD_MFR_WRITE_PROTECT, TPS25990_MFR_WRITE_PROTECT_LOCK) == PMBUS_OK;
+}
+
+bool tps25990_read_device_config(uint8_t addr, uint16_t *out)
+{
+    if (out == NULL)
+    {
+        return false;
+    }
+
+    return pmbus_read_word(addr, TPS25990_CMD_DEVICE_CONFIG, out) == PMBUS_OK;
+}
+
+bool tps25990_write_device_config(uint8_t addr, uint16_t value)
+{
+    return pmbus_write_word(addr, TPS25990_CMD_DEVICE_CONFIG, value) == PMBUS_OK;
+}
+
+bool tps25990_read_retry_config(uint8_t addr, uint8_t *out)
+{
+    if (out == NULL)
+    {
+        return false;
+    }
+
+    return pmbus_read_byte(addr, TPS25990_CMD_RETRY_CONFIG, out) == PMBUS_OK;
+}
+
+bool tps25990_write_retry_config(uint8_t addr, uint8_t value)
+{
+    return pmbus_write_byte(addr, TPS25990_CMD_RETRY_CONFIG, value) == PMBUS_OK;
+}

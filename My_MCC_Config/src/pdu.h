@@ -41,6 +41,14 @@ void PDU_CAN_Init(void);
 void PDU_Init(void);
 
 /**
+ * @brief Service 1 ms PDU tasks.
+ *
+ * Handles fast safety interlock timing that should not wait for the 100 ms
+ * telemetry task.
+ */
+void PDU_Task1ms(void);
+
+/**
  * @brief Run all PDU self-checks and update status LEDs
  * 
  * Performs:

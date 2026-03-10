@@ -36,6 +36,14 @@
  */
 #define TPS25990_DEFAULT_R_IMON_OHMS 1100.0f
 
+/* Runtime configuration values used by this firmware. */
+#define TPS25990_MFR_WRITE_PROTECT_LOCK    0x00U
+#define TPS25990_MFR_WRITE_PROTECT_UNLOCK  0xA2U
+#define TPS25990_DEVICE_CONFIG_SC_RETRY    (1U << 13)
+#define TPS25990_RETRY_CONFIG_DEFAULT      0x84U
+#define TPS25990_RETRY_CONFIG_RACE_MODE    0x9BU
+#define TPS25990_RETRY_CONFIG_TEST_MODE    0x96U
+
 /*============================================================================
  * STATUS_WORD Bit Definitions (0x79)
  * 
@@ -337,5 +345,11 @@ bool tps25990_turn_off(uint8_t addr);
  * @return true on success, false on error
  */
 bool tps25990_clear_faults(uint8_t addr);
+bool tps25990_unlock_writes(uint8_t addr);
+bool tps25990_lock_writes(uint8_t addr);
+bool tps25990_read_device_config(uint8_t addr, uint16_t *out);
+bool tps25990_write_device_config(uint8_t addr, uint16_t value);
+bool tps25990_read_retry_config(uint8_t addr, uint8_t *out);
+bool tps25990_write_retry_config(uint8_t addr, uint8_t value);
 
 #endif /* TPS25990_H */

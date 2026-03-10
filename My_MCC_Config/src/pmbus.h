@@ -72,6 +72,7 @@ extern "C" {
 /* TPS25990 Configuration Commands */
 #define TPS25990_CMD_DEVICE_CONFIG      0xE4U
 #define TPS25990_CMD_ADC_CONFIG         0xE7U
+#define TPS25990_CMD_RETRY_CONFIG       0xE7U
 #define TPS25990_CMD_ADC_CONFIG_2       0xE9U
 #define TPS25990_CMD_ALERT_MASK         0xDBU
 

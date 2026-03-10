@@ -82,10 +82,10 @@ void EIC_Initialize (void)
     /* NMI Control register */
 
     /* Interrupt sense type and filter control for EXTINT channels 0 to 7*/
-    EIC_REGS->EIC_CONFIG0 =  EIC_CONFIG0_SENSE0_RISE  |
-                              EIC_CONFIG0_SENSE1_RISE  |
-                              EIC_CONFIG0_SENSE2_RISE  |
-                              EIC_CONFIG0_SENSE3_RISE  |
+    EIC_REGS->EIC_CONFIG0 =  EIC_CONFIG0_SENSE0_BOTH  |
+                              EIC_CONFIG0_SENSE1_BOTH  |
+                              EIC_CONFIG0_SENSE2_BOTH  |
+                              EIC_CONFIG0_SENSE3_BOTH  |
                               EIC_CONFIG0_SENSE4_NONE  |
                               EIC_CONFIG0_SENSE5_NONE  |
                               EIC_CONFIG0_SENSE6_NONE  |

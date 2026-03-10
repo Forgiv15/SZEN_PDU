@@ -113,7 +113,7 @@ void CAN1_Initialize(void)
 
 
     /* Global Filter Configuration Register */
-    CAN1_REGS->CAN_GFC = CAN_GFC_ANFS_REJECT | CAN_GFC_ANFE_REJECT;
+        CAN1_REGS->CAN_GFC = CAN_GFC_ANFS_RXF0 | CAN_GFC_ANFE_RXF0;
 
     /* Set the operation mode */
 

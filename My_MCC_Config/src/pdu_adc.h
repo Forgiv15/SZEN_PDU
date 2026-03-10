@@ -13,7 +13,7 @@
 /* External reference voltage for ADC */
 #define ADC_VREF_VOLTS      2.048f
 #define ADC_MAX_COUNTS      4095.0f   /* 12-bit ADC */
-#define PDU_ADC_IMON_GAIN_A_PER_A  17.8e-6f
+#define PDU_ADC_IMON_GAIN_A_PER_A  18.18e-6f
 #define PDU_ADC_SHUNT_GAIN_V_PER_A 0.05f
 
 /**
@@ -32,10 +32,20 @@ typedef enum
     PDU_ADC_NONFUSE_SHUNT
 } pdu_adc_channel_t;
 
+typedef enum
+{
+    PDU_ADC_REF_EXTERNAL = 0,
+    PDU_ADC_REF_INTERNAL = 1
+} pdu_adc_reference_t;
+
 /**
  * @brief Initialize ADC peripherals for IMON reading
  */
 void PDU_ADC_Init(void);
+
+bool PDU_ADC_SetReference(pdu_adc_reference_t reference);
+
+pdu_adc_reference_t PDU_ADC_GetReference(void);
 
 /**
  * @brief Read voltage from an IMON ADC channel

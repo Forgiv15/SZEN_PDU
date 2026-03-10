@@ -1,6 +1,26 @@
 #include "pdu_adc.h"
 #include "config/default/peripheral/adc/plib_adc0.h"
 
+#define PDU_ADC_SETTLE_DISCARDS  6U
+#define PDU_ADC_AVERAGE_SAMPLES  8U
+#define PDU_ADC_ENABLE_WARMUP_SAMPLES  6U
+
+static pdu_adc_reference_t pdu_adc_reference = PDU_ADC_REF_EXTERNAL;
+
+static void pdu_adc_discard_warmup_samples(void)
+{
+    uint8_t sample;
+
+    for (sample = 0U; sample < PDU_ADC_ENABLE_WARMUP_SAMPLES; sample++)
+    {
+        ADC0_ConversionStart();
+        while (!ADC0_ConversionStatusGet())
+        {
+        }
+        (void)ADC0_ConversionResultGet();
+    }
+}
+
 static bool pdu_adc_select_channel(pdu_adc_channel_t ch)
 {
     ADC_POSINPUT input;
@@ -44,34 +64,90 @@ static bool pdu_adc_select_channel(pdu_adc_channel_t ch)
 
 static uint16_t pdu_adc_read_raw(pdu_adc_channel_t ch)
 {
+    uint32_t sum = 0U;
+    uint8_t sample;
+
     if (!pdu_adc_select_channel(ch))
     {
         return 0U;
     }
 
-    ADC0_ConversionStart();
-    while (!ADC0_ConversionStatusGet())
+    /*
+     * The input mux is switched between channels. Discard a few samples so the
+     * mux and sample capacitor settle, then average multiple conversions.
+     */
+    for (sample = 0U; sample < PDU_ADC_SETTLE_DISCARDS; sample++)
     {
+        ADC0_ConversionStart();
+        while (!ADC0_ConversionStatusGet())
+        {
+        }
+        (void)ADC0_ConversionResultGet();
     }
-    (void)ADC0_ConversionResultGet();
 
-    ADC0_ConversionStart();
-    while (!ADC0_ConversionStatusGet())
+    for (sample = 0U; sample < PDU_ADC_AVERAGE_SAMPLES; sample++)
     {
+        ADC0_ConversionStart();
+        while (!ADC0_ConversionStatusGet())
+        {
+        }
+        sum += ADC0_ConversionResultGet();
     }
 
-    return ADC0_ConversionResultGet();
+    return (uint16_t)((sum + (PDU_ADC_AVERAGE_SAMPLES / 2U)) / PDU_ADC_AVERAGE_SAMPLES);
 }
 
 void PDU_ADC_Init(void)
 {
+    (void)PDU_ADC_SetReference(PDU_ADC_REF_EXTERNAL);
+}
+
+bool PDU_ADC_SetReference(pdu_adc_reference_t reference)
+{
+    uint8_t refsel;
+    uint32_t supc_vref;
+
+    switch (reference)
+    {
+        case PDU_ADC_REF_EXTERNAL:
+            refsel = (uint8_t)ADC_REFCTRL_REFSEL_VREFA;
+            break;
+        case PDU_ADC_REF_INTERNAL:
+            refsel = (uint8_t)ADC_REFCTRL_REFSEL_INTREF;
+            break;
+        default:
+            return false;
+    }
+
+    supc_vref = SUPC_REGS->SUPC_VREF;
+    supc_vref &= ~(SUPC_VREF_SEL_Msk | SUPC_VREF_VREFOE_Msk | SUPC_VREF_RUNSTDBY_Msk | SUPC_VREF_ONDEMAND_Msk);
+    if (reference == PDU_ADC_REF_INTERNAL)
+    {
+        supc_vref |= SUPC_VREF_SEL_2V048;
+    }
+    SUPC_REGS->SUPC_VREF = supc_vref;
+
+    ADC0_Disable();
+    ADC0_REGS->ADC_REFCTRL = refsel;
+    while (0U != ADC0_REGS->ADC_SYNCBUSY)
+    {
+    }
+
     ADC0_Enable();
+    pdu_adc_discard_warmup_samples();
+    pdu_adc_reference = reference;
+    return true;
+}
+
+pdu_adc_reference_t PDU_ADC_GetReference(void)
+{
+    return pdu_adc_reference;
 }
 
 float PDU_ADC_ReadVoltage(pdu_adc_channel_t ch)
 {
     uint16_t raw = pdu_adc_read_raw(ch);
-
+    (void)ch;
     return ((float)raw / ADC_MAX_COUNTS) * ADC_VREF_VOLTS;
 }
 

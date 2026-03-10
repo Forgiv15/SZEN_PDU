@@ -55,6 +55,7 @@ int main ( void )
 
     if (SYSTICK_TimerPeriodHasExpired()) {
       tick_count++;
+      PDU_Task1ms();
     }
 
     if ((tick_count - last_1s_tick) >= 1000U)
