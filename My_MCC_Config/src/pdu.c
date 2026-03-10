@@ -9,14 +9,18 @@
 #include "pdu_adc.h"
 #include "pmbus.h"
 #include "tps25990.h"
-#include "linear11.h"
 #include "definitions.h"
 
 /* Per-eFuse telemetry CAN base ID (0x500-0x507) */
 #define PDU_CAN_ID_EFUSE_BASE      0x500U
+#define PDU_CAN_ID_ADC_BASE        0x510U
 #define PDU_CAN_ID_MCU_TELEM        0x520U
 #define PDU_CAN_ID_ERR_DETAIL_BASE  0x530U
 #define PDU_CAN_ID_I2C_SCAN_BASE    0x540U
+#define PDU_CAN_ID_PMBUS_DBG_META   0x560U
+#define PDU_CAN_ID_PMBUS_DBG_DATA   0x561U
+#define PDU_CAN_ID_PMBUS_DBG_EXT    0x562U
+#define PDU_PMBUS_PEC_MODE_REQUIRED 0U
 #define PDU_CAN_STD_ID_SHIFT        18U
 #define PDU_CAN_TX_WAIT_LOOPS       50000UL
 
@@ -36,14 +40,23 @@
 /* Detailed error record list settings */
 #define PDU_ERROR_DETAIL_MAX         8U
 
-#define PDU_I2C_SCAN_START_ADDR      0x08U
-#define PDU_I2C_SCAN_END_ADDR        0x77U
-#define PDU_I2C_SCAN_FRAME_COUNT     14U
+#define PDU_I2C_SCAN_START_ADDR      0x40U
+#define PDU_I2C_SCAN_END_ADDR        0x59U
+#define PDU_I2C_SCAN_FRAME_COUNT     (((PDU_I2C_SCAN_END_ADDR - PDU_I2C_SCAN_START_ADDR + 1U) + 7U) / 8U)
 
 /* Detailed error codes */
 #define PDU_ERR_CODE_CAN_TX_FAIL     10U
 #define PDU_ERR_CODE_ENABLE_FAIL     20U
 #define PDU_ERR_CODE_SCAN_NO_ACK     21U
+#define PDU_ERR_CODE_ADC_MISMATCH    30U
+
+#define PDU_ADC_COMPARE_CMD          0xA0U
+#define PDU_ADC_FLAG_VALID           (1U << 0)
+#define PDU_ADC_FLAG_PMBUS_VALID     (1U << 1)
+#define PDU_ADC_FLAG_MISMATCH        (1U << 2)
+#define PDU_ADC_MISMATCH_MIN_A       0.25f
+#define PDU_ADC_MISMATCH_MIN_DIFF_A  0.50f
+#define PDU_ADC_MISMATCH_RATIO       0.25f
 
 /* MCU telemetry debug stage codes (byte4 in 0x520 frame) */
 #define PDU_STAGE_INIT              1U
@@ -63,14 +76,29 @@ static const uint8_t tps_addr[PDU_NUM_EFUSES] =
     0x50U   /* 12V */
 };
 
-/* Minimum voltage threshold for voltage check (11.0V) */
-#define MIN_VOLTAGE_THRESHOLD   11.0f
+static const pdu_adc_channel_t pdu_adc_channels[PDU_NUM_EFUSES] =
+{
+    PDU_ADC_IMON_HYBRID,
+    PDU_ADC_IMON_VENT1,
+    PDU_ADC_IMON_VENT2,
+    PDU_ADC_IMON_IGN,
+    PDU_ADC_IMON_FUEL,
+    PDU_ADC_IMON_WP1,
+    PDU_ADC_IMON_WP2,
+    PDU_ADC_IMON_12V
+};
 
-/* Power calculation tolerance (50% - very lenient for sanity check) */
-#define POWER_CHECK_TOLERANCE   0.5f
-
-/* Delay loop count for FET state change (~1ms at typical CPU speed) */
-#define FET_STATE_DELAY_COUNT   10000UL
+static const float pdu_r_imon_ohms[PDU_NUM_EFUSES] =
+{
+    390.0f,
+    390.0f,
+    390.0f,
+    390.0f,
+    560.0f,
+    560.0f,
+    560.0f,
+    560.0f
+};
 
 static uint8_t can1_msg_ram[CAN1_MESSAGE_RAM_CONFIG_SIZE] __attribute__((aligned(4)));
 static uint8_t pdu_debug_flags = 0U;
@@ -95,6 +123,8 @@ static uint8_t pdu_i2c_scan_found = 0U;
 static uint8_t pdu_i2c_scan_masks_last[PDU_I2C_SCAN_FRAME_COUNT];
 static uint8_t pdu_i2c_scan_found_last = 0xFFU;
 static uint8_t pdu_i2c_scan_report_div = 0U;
+static uint8_t pdu_i2c_scan_div = 0U;
+static uint8_t pdu_comm_fail_streak = 0U;
 
 void PDU_CAN_Init(void)
 {
@@ -125,15 +155,16 @@ static void pdu_enable_all_gpio_outputs(void)
 static bool pdu_enable_all_pmbus_outputs(void)
 {
     uint8_t i;
+    bool all_ok = true;
 
     for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
         if (pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, PMBUS_OPERATION_ON) != PMBUS_OK) {
-            return false;
+            all_ok = false;
         }
     }
 
-    return true;
+    return all_ok;
 }
 
 static bool pdu_can_recover_if_needed(void)
@@ -166,6 +197,39 @@ static uint16_t pdu_float_to_u16_scaled(float value, float scale)
     }
 
     return (uint16_t)scaled;
+}
+
+static float pdu_absf(float value)
+{
+    return (value < 0.0f) ? -value : value;
+}
+
+static bool pdu_adc_current_mismatch(float pmbus_current_a, float adc_current_a, float *diff_out)
+{
+    float reference_current;
+    float diff;
+    float allowed_diff;
+
+    diff = pdu_absf(pmbus_current_a - adc_current_a);
+    reference_current = (pmbus_current_a > adc_current_a) ? pmbus_current_a : adc_current_a;
+    allowed_diff = PDU_ADC_MISMATCH_MIN_DIFF_A;
+
+    if ((reference_current * PDU_ADC_MISMATCH_RATIO) > allowed_diff)
+    {
+        allowed_diff = reference_current * PDU_ADC_MISMATCH_RATIO;
+    }
+
+    if (diff_out != NULL)
+    {
+        *diff_out = diff;
+    }
+
+    if (reference_current < PDU_ADC_MISMATCH_MIN_A)
+    {
+        return false;
+    }
+
+    return diff > allowed_diff;
 }
 
 static bool pdu_can_send_efuse_frame(uint16_t id, uint16_t mv, uint16_t ma, uint16_t p_10mw, uint16_t status_word)
@@ -202,6 +266,44 @@ static bool pdu_can_send_efuse_frame(uint16_t id, uint16_t mv, uint16_t ma, uint
     tx.data[5] = (uint8_t)((p_10mw >> 8) & 0xFFU);
     tx.data[6] = (uint8_t)(status_word & 0xFFU);
     tx.data[7] = (uint8_t)((status_word >> 8) & 0xFFU);
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_adc_frame(uint16_t id, uint16_t adc_ma, uint16_t adc_mv, uint16_t diff_ma, uint8_t flags)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U) {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(id);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(adc_ma & 0xFFU);
+    tx.data[1] = (uint8_t)((adc_ma >> 8) & 0xFFU);
+    tx.data[2] = (uint8_t)(adc_mv & 0xFFU);
+    tx.data[3] = (uint8_t)((adc_mv >> 8) & 0xFFU);
+    tx.data[4] = (uint8_t)(diff_ma & 0xFFU);
+    tx.data[5] = (uint8_t)((diff_ma >> 8) & 0xFFU);
+    tx.data[6] = flags;
+    tx.data[7] = 0U;
 
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
@@ -251,20 +353,139 @@ static bool pdu_can_send_mcu_frame(
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
 
-/**
- * @brief Software delay using busy-wait loop
- * 
- * Note: This is a simple busy-wait delay. For production code, consider
- * using SYSTICK_DelayMs() or other timer-based delays for better CPU utilization.
- * 
- * @param count Number of iterations to delay
- */
-static void delay_loop(uint32_t count)
+static bool pdu_can_send_pmbus_dbg_meta_frame(const pmbus_trace_t *trace)
 {
-    volatile uint32_t i;
-    for (i = 0U; i < count; i++) {
-        /* Busy wait - prevents compiler optimization */
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+    uint32_t flags;
+
+    if (trace == NULL)
+    {
+        return false;
     }
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    flags = trace->fault_flags;
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_PMBUS_DBG_META);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = trace->seq;
+    tx.data[1] = trace->op;
+    tx.data[2] = trace->addr;
+    tx.data[3] = trace->command;
+    tx.data[4] = trace->status;
+    tx.data[5] = (uint8_t)(flags & 0xFFU);
+    tx.data[6] = (uint8_t)((flags >> 8) & 0xFFU);
+    tx.data[7] = trace->sercom_error;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_pmbus_dbg_data_frame(const pmbus_trace_t *trace)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    if (trace == NULL)
+    {
+        return false;
+    }
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_PMBUS_DBG_DATA);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = trace->seq;
+    tx.data[1] = trace->tx[0];
+    tx.data[2] = trace->tx[1];
+    tx.data[3] = trace->tx[2];
+    tx.data[4] = trace->rx[0];
+    tx.data[5] = trace->rx[1];
+    tx.data[6] = trace->rx[2];
+    tx.data[7] = (uint8_t)(((trace->tx_len & 0x0FU) << 4) | (trace->rx_len & 0x0FU));
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_pmbus_dbg_ext_frame(const pmbus_trace_t *trace)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    if (trace == NULL)
+    {
+        return false;
+    }
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_PMBUS_DBG_EXT);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = trace->seq;
+    tx.data[1] = trace->tx[3];
+    tx.data[2] = trace->pec_calc;
+    tx.data[3] = trace->pec_rx;
+    tx.data[4] = trace->trace_flags;
+    tx.data[5] = PDU_PMBUS_PEC_MODE_REQUIRED;
+    tx.data[6] = pmbus_get_last_sercom_error();
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
 }
 
 static uint8_t pdu_pmbus_status_to_error_code(pmbus_status_t st)
@@ -607,138 +828,15 @@ static void pdu_note_pmbus_error(pmbus_status_t st, uint8_t channel, uint8_t com
     }
 }
 
-/**
- * @brief Check if all eFuses have input voltage above threshold
- * 
- * Reads VOUT from each eFuse and verifies it's above 11V.
- * 
- * @return true if all voltages are OK, false if any is below threshold
- */
-static bool check_voltage_all(void)
-{
-    uint8_t i;
-    
-    for (i = 0U; i < PDU_NUM_EFUSES; i++)
-    {
-        uint16_t raw;
-        
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &raw) != PMBUS_OK) {
-            return false;
-        }
-
-        float v = linear11_to_float(raw);
-        if (v < MIN_VOLTAGE_THRESHOLD) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
- * @brief Check power calculation consistency for all eFuses
- * 
- * Compares calculated power (V*I) with measured power from each eFuse.
- * 
- * @return true if all power readings are consistent, false otherwise
- */
-static bool check_power_all(void)
-{
-    uint8_t i;
-    
-    for (i = 0U; i < PDU_NUM_EFUSES; i++)
-    {
-        uint16_t vraw, iraw, praw;
-
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw) != PMBUS_OK) {
-            return false;
-        }
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_IIN, &iraw) != PMBUS_OK) {
-            return false;
-        }
-        if (pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_PIN, &praw) != PMBUS_OK) {
-            return false;
-        }
-
-        float v = linear11_to_float(vraw);
-        float current = linear11_to_float(iraw);
-        float p_calc = v * current;
-        float p_meas = linear11_to_float(praw);
-
-        /* Skip check if power is very low (avoid division issues) */
-        if (p_calc < 0.1f) {
-            continue;
-        }
-
-        /* Check if measured power is at least 50% of calculated */
-        if (p_meas < (p_calc * POWER_CHECK_TOLERANCE)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
- * @brief Check FET driver operation for all eFuses
- * 
- * For each eFuse:
- * 1. Turn OFF the output
- * 2. Turn ON the output
- * 3. Verify FET_OFF status bit changes correctly
- * 
- * @return true if all FET drivers respond correctly, false otherwise
- */
-static bool check_fet_all(void)
-{
-    uint8_t i;
-    
-    for (i = 0U; i < PDU_NUM_EFUSES; i++)
-    {
-        uint8_t status;
-
-        /* Turn OFF the output */
-        if (pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, PMBUS_OPERATION_OFF) != PMBUS_OK) {
-            return false;
-        }
-
-        /* Delay for FET state change */
-        delay_loop(FET_STATE_DELAY_COUNT);
-
-        /* Read STATUS_BYTE to verify FET is OFF */
-        if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK) {
-            return false;
-        }
-
-        /* Verify FET_OFF bit is SET (FET should be off) */
-        if ((status & TPS25990_SB_FET_OFF) == 0U) {
-            return false;  /* FET should be off but isn't */
-        }
-
-        /* Turn ON the output */
-        if (pmbus_write_byte(tps_addr[i], PMBUS_CMD_OPERATION, PMBUS_OPERATION_ON) != PMBUS_OK) {
-            return false;
-        }
-
-        /* Delay for FET state change */
-        delay_loop(FET_STATE_DELAY_COUNT);
-
-        /* Read STATUS_BYTE to verify FET is ON */
-        if (pmbus_read_byte(tps_addr[i], PMBUS_CMD_STATUS_BYTE, &status) != PMBUS_OK) {
-            return false;
-        }
-
-        /* Verify FET_OFF bit is CLEAR (FET should be on) */
-        if ((status & TPS25990_SB_FET_OFF) != 0U) {
-            return false;  /* FET should be on but isn't */
-        }
-    }
-    return true;
-}
-
 void PDU_Init(void)
 {
     uint8_t bit;
+    SERCOM_I2C_TRANSFER_SETUP i2c_setup = { 0 };
 
     PDU_CAN_Init();
+
+    i2c_setup.clkSpeed = 100000UL;
+    (void)SERCOM1_I2C_TransferSetup(&i2c_setup, 0U);
 
     /* Initialize ADC for IMON readings */
     PDU_ADC_Init();
@@ -772,9 +870,6 @@ void PDU_Init(void)
 
 void PDU_RunChecks(void)
 {
-    bool v_ok = check_voltage_all();
-    bool p_ok = check_power_all();
-    bool f_ok = check_fet_all();
     bool en_ok;
 
     pdu_debug_stage = PDU_STAGE_RUNCHECKS;
@@ -782,41 +877,8 @@ void PDU_RunChecks(void)
     pdu_enable_all_gpio_outputs();
     en_ok = pdu_enable_all_pmbus_outputs();
     if (!en_ok) {
-        f_ok = false;
         pdu_error_set(PDU_ERR_ENABLE_FAIL);
         pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PMBUS_CMD_OPERATION);
-    }
-
-    /* 
-     * Active-low LEDs:
-     * - Clear() = LED ON (pulling low)
-     * - Set() = LED OFF (pulling high)
-     * - Toggle() = blink effect
-     *
-     * Green LED: Voltage check
-     * Blue LED: Power calculation check
-     * Red LED: FET driver check
-     */
-    
-    /* Green LED - Voltage check */
-    if (v_ok) {
-        GPIO_GLED_Clear();  /* All OK - LED solid ON */
-    } else {
-        GPIO_GLED_Toggle(); /* Fault - LED blinks */
-    }
-
-    /* Blue LED - Power check */
-    if (p_ok) {
-        GPIO_BLED_Clear();  /* All OK - LED solid ON */
-    } else {
-        GPIO_BLED_Toggle(); /* Fault - LED blinks */
-    }
-
-    /* Red LED - FET check */
-    if (f_ok) {
-        GPIO_RLED_Clear();  /* All OK - LED solid ON */
-    } else {
-        GPIO_RLED_Toggle(); /* Fault - LED blinks */
     }
 }
 
@@ -826,6 +888,8 @@ void PDU_PollAndSendTelemetry(void)
     uint8_t detail_slot;
     uint8_t flt_bitmap = 0U;
     uint16_t shunt_ma = 0U;
+    pmbus_trace_t pmbus_trace;
+    uint8_t cycle_ok_count = 0U;
 
     pdu_debug_stage = PDU_STAGE_TELEMETRY;
     pdu_error_age();
@@ -834,8 +898,13 @@ void PDU_PollAndSendTelemetry(void)
     pdu_fail_command = 0U;
     pdu_last_error = 0U;
 
-    pdu_i2c_scan_update();
-    pdu_i2c_scan_report_if_needed();
+    pdu_i2c_scan_div++;
+    if (pdu_i2c_scan_div >= 10U)
+    {
+        pdu_i2c_scan_div = 0U;
+        pdu_i2c_scan_update();
+        pdu_i2c_scan_report_if_needed();
+    }
 
     for (i = 0U; i < PDU_NUM_EFUSES; i++)
     {
@@ -845,9 +914,22 @@ void PDU_PollAndSendTelemetry(void)
         uint16_t mv = 0U;
         uint16_t ma = 0U;
         uint16_t p_10mw = 0U;
+        uint16_t adc_ma = 0U;
+        uint16_t adc_mv = 0U;
+        uint16_t diff_ma = 0U;
         uint16_t status = 0xFFFFU;
+        uint8_t adc_flags = PDU_ADC_FLAG_VALID;
+        float adc_voltage_v;
+        float adc_current_a;
+        float pmbus_current_a = 0.0f;
+        float adc_diff_a = 0.0f;
         pmbus_status_t st;
         uint8_t failed_cmd = PMBUS_CMD_READ_VOUT;
+
+        adc_voltage_v = PDU_ADC_ReadVoltage(pdu_adc_channels[i]);
+        adc_current_a = PDU_ADC_ReadImonCurrent(pdu_adc_channels[i], pdu_r_imon_ohms[i]);
+        adc_mv = pdu_float_to_u16_scaled(adc_voltage_v, 1000.0f);
+        adc_ma = pdu_float_to_u16_scaled(adc_current_a, 1000.0f);
 
         failed_cmd = PMBUS_CMD_READ_VOUT;
         st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw);
@@ -869,9 +951,26 @@ void PDU_PollAndSendTelemetry(void)
 
         if (st == PMBUS_OK)
         {
-            mv = pdu_float_to_u16_scaled(linear11_to_float(vraw), 1000.0f);
-            ma = pdu_float_to_u16_scaled(linear11_to_float(iraw), 1000.0f);
-            p_10mw = pdu_float_to_u16_scaled(linear11_to_float(praw), 100.0f);
+            cycle_ok_count++;
+            mv = pdu_float_to_u16_scaled(tps25990_decode_vout(vraw), 1000.0f);
+            pmbus_current_a = tps25990_decode_iin_with_r_imon(iraw, pdu_r_imon_ohms[i]);
+            ma = pdu_float_to_u16_scaled(pmbus_current_a, 1000.0f);
+            p_10mw = pdu_float_to_u16_scaled(tps25990_decode_pin_with_r_imon(praw, pdu_r_imon_ohms[i]), 100.0f);
+            adc_flags |= PDU_ADC_FLAG_PMBUS_VALID;
+
+            if (pdu_adc_current_mismatch(pmbus_current_a, adc_current_a, &adc_diff_a))
+            {
+                adc_flags |= PDU_ADC_FLAG_MISMATCH;
+                pdu_error_details_upsert(PDU_ERR_CODE_ADC_MISMATCH, i, PDU_ADC_COMPARE_CMD);
+                if (pdu_fail_channel == 0xFFU)
+                {
+                    pdu_last_error = PDU_ERR_CODE_ADC_MISMATCH;
+                    pdu_fail_channel = i;
+                    pdu_fail_command = PDU_ADC_COMPARE_CMD;
+                }
+            }
+
+            diff_ma = pdu_float_to_u16_scaled(adc_diff_a, 1000.0f);
 
             if ((mv == 0U) && (ma == 0U) && (p_10mw == 0U)) {
                 pdu_error_set(PDU_ERR_ZERO_TELEM);
@@ -892,7 +991,35 @@ void PDU_PollAndSendTelemetry(void)
                 pdu_fail_command = 0x00U;
             }
         }
+
+        if (!pdu_can_send_adc_frame((uint16_t)(PDU_CAN_ID_ADC_BASE + i), adc_ma, adc_mv, diff_ma, adc_flags)) {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, i, 0x10U);
+        }
     }
+
+    if (cycle_ok_count == 0U)
+    {
+        if (pdu_comm_fail_streak < 250U)
+        {
+            pdu_comm_fail_streak++;
+        }
+    }
+    else
+    {
+        pdu_comm_fail_streak = 0U;
+    }
+
+    if (pdu_comm_fail_streak >= 5U)
+    {
+        SERCOM1_I2C_TransferAbort();
+        pdu_enable_all_gpio_outputs();
+        (void)pdu_enable_all_pmbus_outputs();
+        pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PMBUS_CMD_OPERATION);
+        pdu_comm_fail_streak = 0U;
+    }
+
+    shunt_ma = pdu_float_to_u16_scaled(PDU_ADC_ReadNonfuseCurrent(), 1000.0f);
 
     pdu_debug_flags = pdu_error_bitmap_get();
 
@@ -920,5 +1047,19 @@ void PDU_PollAndSendTelemetry(void)
     for (detail_slot = 0U; detail_slot < PDU_ERROR_DETAIL_MAX; detail_slot++)
     {
         (void)pdu_can_send_error_detail_frame(detail_slot);
+    }
+
+    while (pmbus_trace_pop(&pmbus_trace))
+    {
+        bool meta_ok = pdu_can_send_pmbus_dbg_meta_frame(&pmbus_trace);
+        bool data_ok = pdu_can_send_pmbus_dbg_data_frame(&pmbus_trace);
+        bool ext_ok = pdu_can_send_pmbus_dbg_ext_frame(&pmbus_trace);
+
+        if ((!meta_ok) || (!data_ok) || (!ext_ok))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, 0x60U);
+            break;
+        }
     }
 }

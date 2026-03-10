@@ -12,6 +12,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*============================================================================
  * PMBus Standard Commands (from PMBus Specification)
  *===========================================================================*/
@@ -111,6 +115,53 @@ typedef enum {
 } pmbus_status_t;
 
 /*============================================================================
+ * PMBus Fault Flags (last transaction)
+ *===========================================================================*/
+
+#define PMBUS_FAULT_NONE          (0UL)
+#define PMBUS_FAULT_OP_READ       (1UL << 0)
+#define PMBUS_FAULT_OP_WRITE      (1UL << 1)
+#define PMBUS_FAULT_ACK           (1UL << 2)
+#define PMBUS_FAULT_NACK          (1UL << 3)
+#define PMBUS_FAULT_TIMEOUT       (1UL << 4)
+#define PMBUS_FAULT_PEC_ERROR     (1UL << 5)
+#define PMBUS_FAULT_BUS_ERROR     (1UL << 6)
+#define PMBUS_FAULT_PARAM_ERROR   (1UL << 7)
+#define PMBUS_FAULT_START_ERROR   (1UL << 8)
+
+#define PMBUS_TRACE_FLAG_USED_PEC       (1U << 0)
+
+/*============================================================================
+ * PMBus Transaction Trace
+ *===========================================================================*/
+
+typedef enum {
+    PMBUS_TRACE_OP_NONE = 0,
+    PMBUS_TRACE_OP_SEND_BYTE,
+    PMBUS_TRACE_OP_WRITE_BYTE,
+    PMBUS_TRACE_OP_WRITE_WORD,
+    PMBUS_TRACE_OP_READ_BYTE,
+    PMBUS_TRACE_OP_READ_WORD
+} pmbus_trace_op_t;
+
+typedef struct {
+    uint8_t seq;
+    uint8_t op;
+    uint8_t addr;
+    uint8_t command;
+    uint8_t status;
+    uint32_t fault_flags;
+    uint8_t tx_len;
+    uint8_t rx_len;
+    uint8_t tx[4];
+    uint8_t rx[3];
+    uint8_t pec_calc;
+    uint8_t pec_rx;
+    uint8_t sercom_error;
+    uint8_t trace_flags;
+} pmbus_trace_t;
+
+/*============================================================================
  * PMBus Function Declarations
  *===========================================================================*/
 
@@ -162,5 +213,29 @@ pmbus_status_t pmbus_read_word(uint8_t addr, uint8_t command, uint16_t *out);
  * @return pmbus_status_t PMBUS_OK on success
  */
 pmbus_status_t pmbus_send_byte(uint8_t addr, uint8_t command);
+
+uint8_t pmbus_get_last_sercom_error(void);
+
+/**
+ * @brief Get bitwise fault flags of the most recent PMBus transaction
+ */
+uint32_t pmbus_get_last_fault_flags(void);
+
+/**
+ * @brief Clear stored PMBus transaction fault flags
+ */
+void pmbus_clear_last_fault_flags(void);
+
+/**
+ * @brief Pop oldest PMBus transaction trace record from internal queue
+ *
+ * @param out Pointer to record destination
+ * @return true if a record was popped, false if queue is empty
+ */
+bool pmbus_trace_pop(pmbus_trace_t *out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PMBUS_H */

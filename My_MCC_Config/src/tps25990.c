@@ -7,11 +7,69 @@
 
 #include "tps25990.h"
 #include "pmbus.h"
-#include "linear11.h"
 #include <stddef.h>
 
 /* Power calculation tolerance (15%) */
 #define POWER_TOLERANCE 0.15f
+
+static float tps25990_pow10_neg_r(int8_t r)
+{
+    float factor = 1.0f;
+    uint8_t count;
+
+    if (r < 0) {
+        for (count = 0U; count < (uint8_t)(-r); count++) {
+            factor *= 10.0f;
+        }
+    } else if (r > 0) {
+        for (count = 0U; count < (uint8_t)r; count++) {
+            factor /= 10.0f;
+        }
+    }
+
+    return factor;
+}
+
+static float tps25990_direct_to_float(uint16_t raw, float m, float b, int8_t r)
+{
+    int16_t y = (int16_t)raw;
+    return ((((float)y) * tps25990_pow10_neg_r(r)) - b) / m;
+}
+
+float tps25990_decode_vin(uint16_t raw)
+{
+    return tps25990_direct_to_float(raw, 5251.0f, 0.0f, -2);
+}
+
+float tps25990_decode_vout(uint16_t raw)
+{
+    return tps25990_direct_to_float(raw, 5251.0f, 0.0f, -2);
+}
+
+float tps25990_decode_iin_with_r_imon(uint16_t raw, float r_imon_ohms)
+{
+    return tps25990_direct_to_float(raw, 9.538f * r_imon_ohms, 0.0f, -3);
+}
+
+float tps25990_decode_iin(uint16_t raw)
+{
+    return tps25990_decode_iin_with_r_imon(raw, TPS25990_DEFAULT_R_IMON_OHMS);
+}
+
+float tps25990_decode_pin_with_r_imon(uint16_t raw, float r_imon_ohms)
+{
+    return tps25990_direct_to_float(raw, 4.901f * r_imon_ohms, 0.0f, -4);
+}
+
+float tps25990_decode_pin(uint16_t raw)
+{
+    return tps25990_decode_pin_with_r_imon(raw, TPS25990_DEFAULT_R_IMON_OHMS);
+}
+
+float tps25990_decode_temp(uint16_t raw)
+{
+    return tps25990_direct_to_float(raw, 140.0f, 32100.0f, -2);
+}
 
 /**
  * @brief Decode STATUS_BYTE from raw value
@@ -87,6 +145,11 @@ static void decode_status_mfr(uint8_t raw, tps25990_status_mfr_t *out)
 
 bool tps25990_read_all(uint8_t addr, tps25990_data_t *d)
 {
+    return tps25990_read_all_with_r_imon(addr, TPS25990_DEFAULT_R_IMON_OHMS, d);
+}
+
+bool tps25990_read_all_with_r_imon(uint8_t addr, float r_imon_ohms, tps25990_data_t *d)
+{
     if (d == NULL) {
         return false;
     }
@@ -110,12 +173,12 @@ bool tps25990_read_all(uint8_t addr, tps25990_data_t *d)
         return false;
     }
 
-    /* Convert Linear11 to float values */
-    d->vin_V  = linear11_to_float(d->vin_raw);
-    d->vout_V = linear11_to_float(d->vout_raw);
-    d->iin_A  = linear11_to_float(d->iin_raw);
-    d->pin_W  = linear11_to_float(d->pin_raw);
-    d->temp_C = linear11_to_float(d->temp_raw);
+    /* TPS25990 telemetry uses DIRECT format, not Linear11. */
+    d->vin_V  = tps25990_decode_vin(d->vin_raw);
+    d->vout_V = tps25990_decode_vout(d->vout_raw);
+    d->iin_A  = tps25990_decode_iin_with_r_imon(d->iin_raw, r_imon_ohms);
+    d->pin_W  = tps25990_decode_pin_with_r_imon(d->pin_raw, r_imon_ohms);
+    d->temp_C = tps25990_decode_temp(d->temp_raw);
 
     /* Sanity check: P ~= V * I */
     float expected = d->vin_V * d->iin_A;

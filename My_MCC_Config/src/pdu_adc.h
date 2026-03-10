@@ -8,12 +8,13 @@
 #ifndef PDU_ADC_H
 #define PDU_ADC_H
 
-//#include <stdint.h>
 #include <stdbool.h>
 
 /* External reference voltage for ADC */
 #define ADC_VREF_VOLTS      2.048f
 #define ADC_MAX_COUNTS      4095.0f   /* 12-bit ADC */
+#define PDU_ADC_IMON_GAIN_A_PER_A  17.8e-6f
+#define PDU_ADC_SHUNT_GAIN_V_PER_A 0.05f
 
 /**
  * @brief ADC channels for IMON pins mapping to eFuse channels
@@ -27,7 +28,8 @@ typedef enum
     PDU_ADC_IMON_FUEL,
     PDU_ADC_IMON_WP1,
     PDU_ADC_IMON_WP2,
-    PDU_ADC_IMON_12V
+    PDU_ADC_IMON_12V,
+    PDU_ADC_NONFUSE_SHUNT
 } pdu_adc_channel_t;
 
 /**
@@ -42,5 +44,9 @@ void PDU_ADC_Init(void);
  * @return float Voltage in volts
  */
 float PDU_ADC_ReadVoltage(pdu_adc_channel_t ch);
+
+float PDU_ADC_ReadImonCurrent(pdu_adc_channel_t ch, float r_imon_ohms);
+
+float PDU_ADC_ReadNonfuseCurrent(void);
 
 #endif /* PDU_ADC_H */

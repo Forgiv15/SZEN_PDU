@@ -1,18 +1,10 @@
 /**
  * @file pmbus_pec.c
- * @brief PMBus PEC (Packet Error Checking) implementation using SMBus CRC-8
- * 
- * The SMBus CRC-8 uses polynomial: x^8 + x^2 + x + 1 (0x07)
- * with an initial value of 0x00.
+ * @brief SMBus PEC (CRC-8, polynomial 0x07)
  */
 
 #include "pmbus_pec.h"
 
-/**
- * @brief SMBus CRC-8 lookup table (polynomial 0x07)
- * 
- * Pre-computed table for fast CRC-8 calculation.
- */
 static const uint8_t crc8_table[256] = {
     0x00U, 0x07U, 0x0EU, 0x09U, 0x1CU, 0x1BU, 0x12U, 0x15U,
     0x38U, 0x3FU, 0x36U, 0x31U, 0x24U, 0x23U, 0x2AU, 0x2DU,
@@ -53,14 +45,18 @@ uint8_t pmbus_crc8_update(uint8_t crc, uint8_t data)
     return crc8_table[crc ^ data];
 }
 
-uint8_t pmbus_crc8_calc(const uint8_t *data, uint8_t len)
+uint8_t pmbus_crc8(const uint8_t *data, uint8_t len)
 {
     uint8_t crc = 0U;
     uint8_t i;
-    
+
+    if (data == (const uint8_t *)0) {
+        return 0U;
+    }
+
     for (i = 0U; i < len; i++) {
         crc = pmbus_crc8_update(crc, data[i]);
     }
-    
+
     return crc;
 }

@@ -35,7 +35,7 @@ data:
       - children:
         - attributes:
             id: sercom1
-            value: '232'
+            value: '52'
           type: Dynamic
         type: Values
       type: Hex
@@ -63,12 +63,6 @@ data:
       children:
       - children:
         - attributes:
-            id: max
-          children:
-          - type: Value
-            value: '400'
-          type: Integer
-        - attributes:
             id: visible
           children:
           - type: Value
@@ -77,7 +71,7 @@ data:
         type: Attributes
       - children:
         - attributes:
-            value: '100'
+            value: '400'
           type: User
         type: Values
       type: Integer
@@ -88,7 +82,7 @@ data:
       - children:
         - attributes:
             id: sercom1
-            value: '100000'
+            value: '400000'
           type: Dynamic
         type: Values
       type: Integer

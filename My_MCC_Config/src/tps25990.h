@@ -31,6 +31,11 @@
 #define TPS25990_CMD_READ_PIN       0x97U
 #define TPS25990_CMD_READ_TEMP      0x8DU
 
+/* Default board assumption for IMON resistor scaling.
+ * If your hardware uses a different R_IMON value, update this constant.
+ */
+#define TPS25990_DEFAULT_R_IMON_OHMS 1100.0f
+
 /*============================================================================
  * STATUS_WORD Bit Definitions (0x79)
  * 
@@ -230,7 +235,7 @@ typedef struct {
  * @brief Complete TPS25990 telemetry data structure
  */
 typedef struct {
-    /* Raw PMBus words (Linear11 format) */
+    /* Raw PMBus words (DIRECT format) */
     uint16_t status_word;
     uint16_t vin_raw;
     uint16_t vout_raw;
@@ -273,6 +278,15 @@ typedef struct {
  * @return true on success, false on communication error
  */
 bool tps25990_read_all(uint8_t addr, tps25990_data_t *out);
+bool tps25990_read_all_with_r_imon(uint8_t addr, float r_imon_ohms, tps25990_data_t *out);
+
+float tps25990_decode_vin(uint16_t raw);
+float tps25990_decode_vout(uint16_t raw);
+float tps25990_decode_iin(uint16_t raw);
+float tps25990_decode_pin(uint16_t raw);
+float tps25990_decode_temp(uint16_t raw);
+float tps25990_decode_iin_with_r_imon(uint16_t raw, float r_imon_ohms);
+float tps25990_decode_pin_with_r_imon(uint16_t raw, float r_imon_ohms);
 
 /**
  * @brief Read and decode STATUS_WORD from a TPS25990 device

@@ -54,9 +54,9 @@ generatedFileHashHistoryMap:
 - file: ..\src\config\default\peripheral\can\plib_can0.h
   hash: f4e0297302039b412656c07a58f6a1a39edb0ca814a3fe0cef5a8dc592055152
 - file: ..\src\config\default\peripheral\can\plib_can1.c
-  hash: 2fde9d00ca6be0e5660d3e80317edf9822297902bd2128d710c6caa8b0365046
+  hash: 08fa25ec1d15f6ea15159242b3f3f379ba317905ad8274eafdfeb441d4f8049c
 - file: ..\src\config\default\peripheral\can\plib_can1.h
-  hash: 3237de4a4f656f996a4b3c449dbd14e23be7ee0885790c1853b2c1990d714413
+  hash: 817e4dab98ddfb66d2e3bbe156e442350fcb9e3a6bf61719f6375ed9b5467aa4
 - file: ..\src\config\default\peripheral\can\plib_can_common.h
   hash: e0e3b54f69be9d8811bbe507f91daa443ae7bff5dc724ac51baebc160097b2d6
 - file: ..\src\config\default\peripheral\clock\plib_clock.c
@@ -84,7 +84,7 @@ generatedFileHashHistoryMap:
 - file: ..\src\config\default\peripheral\port\plib_port.h
   hash: ef6b20b89302796002cbffde650ad6f6c2df34a32e1c35361f84e33350e2f427
 - file: ..\src\config\default\peripheral\sercom\i2c_master\plib_sercom1_i2c_master.c
-  hash: 23f7ffd595100c1085ccd0585b5f2a7f9df5a31cb8a2f50cd36c352e9b182c71
+  hash: 6ff313ff092524a485a75d42f7f9a0fd16e517136f34a0bed334a6205fac05b9
 - file: ..\src\config\default\peripheral\sercom\i2c_master\plib_sercom1_i2c_master.h
   hash: 989b307a02a3932781c3120222b4624c5536e6cda1a1d70259e230a8f60c5ed4
 - file: ..\src\config\default\peripheral\sercom\i2c_master\plib_sercom_i2c_master_common.h

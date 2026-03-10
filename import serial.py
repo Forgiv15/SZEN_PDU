@@ -23,17 +23,23 @@ WATERFALL_MAX_LINES = 500
 
 CAN_ID_EFUSE_BASE = 0x500
 CAN_ID_EFUSE_LAST = CAN_ID_EFUSE_BASE + EFUSE_COUNT - 1
+CAN_ID_ADC_BASE = 0x510
+CAN_ID_ADC_LAST = CAN_ID_ADC_BASE + EFUSE_COUNT - 1
 CAN_ID_MCU = 0x520
 CAN_ID_ERR_DETAIL_BASE = 0x530
 CAN_ID_ERR_DETAIL_LAST = CAN_ID_ERR_DETAIL_BASE + 7
 CAN_ID_I2C_SCAN_BASE = 0x540
-CAN_ID_I2C_SCAN_LAST = CAN_ID_I2C_SCAN_BASE + 13
+CAN_ID_I2C_SCAN_LAST = CAN_ID_I2C_SCAN_BASE + 3
+CAN_ID_PMBUS_DBG_META = 0x560
+CAN_ID_PMBUS_DBG_DATA = 0x561
+CAN_ID_PMBUS_DBG_EXT = 0x562
 
 PMBUS_CMD_NAMES = {
     0x79: "STATUS_WORD",
     0x8B: "READ_VOUT",
     0x89: "READ_IIN",
     0x97: "READ_PIN",
+    0xA0: "ADC_COMPARE",
 }
 
 MCU_ERR_NAMES = {
@@ -45,7 +51,53 @@ MCU_ERR_NAMES = {
     10: "CAN_TX",
     20: "ENABLE_FAIL",
     21: "SCAN_NO_ACK",
+    30: "ADC_MISMATCH",
 }
+
+PMBUS_STATUS_NAMES = {
+    0: "OK",
+    1: "NACK",
+    2: "TIMEOUT",
+    3: "PEC",
+    4: "BUS",
+}
+
+SERCOM_ERR_NAMES = {
+    0: "NONE",
+    1: "NAK",
+    2: "BUS",
+}
+
+PMBUS_PEC_MODE_NAMES = {
+    0: "REQ",
+    1: "OFF",
+    2: "AUTO",
+}
+
+PMBUS_TRACE_FLAG_NAMES = {
+    0x01: "PEC",
+    0x02: "FB_NOPEC",
+}
+
+PMBUS_OP_NAMES = {
+    1: "SEND_BYTE",
+    2: "WRITE_BYTE",
+    3: "WRITE_WORD",
+    4: "READ_BYTE",
+    5: "READ_WORD",
+}
+
+PMBUS_FAULT_NAMES = [
+    "OP_READ",
+    "OP_WRITE",
+    "ACK",
+    "NACK",
+    "TIMEOUT",
+    "PEC_ERR",
+    "BUS_ERR",
+    "PARAM_ERR",
+    "START_ERR",
+]
 
 # ================= STATUS WORD BIT NAMES =================
 
@@ -76,6 +128,10 @@ voltage = [0]*EFUSE_COUNT
 current = [0]*EFUSE_COUNT
 power   = [0]*EFUSE_COUNT
 status_word = [0]*EFUSE_COUNT
+adc_current = [0]*EFUSE_COUNT
+adc_voltage = [0]*EFUSE_COUNT
+adc_diff = [0]*EFUSE_COUNT
+adc_flags = [0]*EFUSE_COUNT
 
 current_history = [deque(maxlen=HISTORY_LENGTH) for _ in range(EFUSE_COUNT)]
 
@@ -89,6 +145,8 @@ mcu_dbg_fail_command = 0
 
 active_error_details = {}
 i2c_scan_blocks = {}
+pmbus_debug_pending = {}
+pmbus_debug_lines = deque(maxlen=400)
 
 system_flag_names = [
     "ENABLE_FAIL",
@@ -107,6 +165,7 @@ serial_connected = False
 serial_error = "Not connected"
 serial_instance = None
 serial_state_lock = threading.Lock()
+telemetry_lock = threading.Lock()
 
 
 def list_available_ports():
@@ -180,64 +239,184 @@ def parse_bridge_can_line(line):
 def decode_can_frame(frame):
     global mcu_shunt, flt_bits, system_flags
     global mcu_dbg_stage, mcu_dbg_error, mcu_dbg_fail_channel, mcu_dbg_fail_command
-    global active_error_details, i2c_scan_blocks
+    global active_error_details, i2c_scan_blocks, pmbus_debug_pending, pmbus_debug_lines
+    global adc_current, adc_voltage, adc_diff, adc_flags
 
     can_id = frame["can_id"]
     data = frame["data"]
 
-    if CAN_ID_EFUSE_BASE <= can_id <= CAN_ID_EFUSE_LAST:
-        if len(data) < 8:
-            return
+    with telemetry_lock:
+        if CAN_ID_EFUSE_BASE <= can_id <= CAN_ID_EFUSE_LAST:
+            if len(data) < 8:
+                return
 
-        idx = can_id - CAN_ID_EFUSE_BASE
-        voltage[idx] = data[0] | (data[1] << 8)
-        current[idx] = data[2] | (data[3] << 8)
-        power[idx] = data[4] | (data[5] << 8)
-        status_word[idx] = data[6] | (data[7] << 8)
-        current_history[idx].append(current[idx])
+            idx = can_id - CAN_ID_EFUSE_BASE
+            voltage[idx] = data[0] | (data[1] << 8)
+            current[idx] = data[2] | (data[3] << 8)
+            power[idx] = data[4] | (data[5] << 8)
+            status_word[idx] = data[6] | (data[7] << 8)
+            current_history[idx].append(current[idx])
 
-    elif can_id == CAN_ID_MCU:
-        if len(data) < 4:
-            return
+        elif CAN_ID_ADC_BASE <= can_id <= CAN_ID_ADC_LAST:
+            if len(data) < 7:
+                return
 
-        flt_bits = data[0]
-        system_flags = data[1]
-        mcu_shunt = data[2] | (data[3] << 8)
+            idx = can_id - CAN_ID_ADC_BASE
+            adc_current[idx] = data[0] | (data[1] << 8)
+            adc_voltage[idx] = data[2] | (data[3] << 8)
+            adc_diff[idx] = data[4] | (data[5] << 8)
+            adc_flags[idx] = data[6]
 
-        if len(data) >= 8:
-            mcu_dbg_stage = data[4]
-            mcu_dbg_error = data[5]
-            mcu_dbg_fail_channel = data[6]
-            mcu_dbg_fail_command = data[7]
+        elif can_id == CAN_ID_MCU:
+            if len(data) < 4:
+                return
 
-    elif CAN_ID_ERR_DETAIL_BASE <= can_id <= CAN_ID_ERR_DETAIL_LAST:
-        if len(data) < 6:
-            return
+            flt_bits = data[0]
+            system_flags = data[1]
+            mcu_shunt = data[2] | (data[3] << 8)
 
-        slot = can_id - CAN_ID_ERR_DETAIL_BASE
-        active = data[1] != 0
+            if len(data) >= 8:
+                mcu_dbg_stage = data[4]
+                mcu_dbg_error = data[5]
+                mcu_dbg_fail_channel = data[6]
+                mcu_dbg_fail_command = data[7]
 
-        if active:
-            active_error_details[slot] = {
-                "err": data[2],
-                "channel": data[3],
-                "command": data[4],
-                "ttl": data[5],
+        elif CAN_ID_ERR_DETAIL_BASE <= can_id <= CAN_ID_ERR_DETAIL_LAST:
+            if len(data) < 6:
+                return
+
+            slot = can_id - CAN_ID_ERR_DETAIL_BASE
+            active = data[1] != 0
+
+            if active:
+                active_error_details[slot] = {
+                    "err": data[2],
+                    "channel": data[3],
+                    "command": data[4],
+                    "ttl": data[5],
+                }
+            else:
+                if slot in active_error_details:
+                    del active_error_details[slot]
+
+        elif CAN_ID_I2C_SCAN_BASE <= can_id <= CAN_ID_I2C_SCAN_LAST:
+            if len(data) < 6:
+                return
+
+            slot = can_id - CAN_ID_I2C_SCAN_BASE
+            i2c_scan_blocks[slot] = {
+                "base": data[1],
+                "mask": data[2],
+                "found": data[3],
+                "start": data[4],
+                "end": data[5],
             }
-        else:
-            if slot in active_error_details:
-                del active_error_details[slot]
 
-    elif CAN_ID_I2C_SCAN_BASE <= can_id <= CAN_ID_I2C_SCAN_LAST:
-        if len(data) < 4:
-            return
+        elif can_id == CAN_ID_PMBUS_DBG_META:
+            if len(data) < 7:
+                return
 
-        slot = can_id - CAN_ID_I2C_SCAN_BASE
-        i2c_scan_blocks[slot] = {
-            "base": data[1],
-            "mask": data[2],
-            "found": data[3],
-        }
+            seq = data[0]
+            entry = pmbus_debug_pending.get(seq, {})
+            entry["meta"] = {
+                "seq": seq,
+                "op": data[1],
+                "addr": data[2],
+                "cmd": data[3],
+                "status": data[4],
+                "fault_flags": data[5] | (data[6] << 8),
+                "sercom_error": data[7] if len(data) >= 8 else 0,
+            }
+            pmbus_debug_pending[seq] = entry
+
+            if "data" in entry:
+                append_pmbus_trace_line(seq)
+
+        elif can_id == CAN_ID_PMBUS_DBG_DATA:
+            if len(data) < 8:
+                return
+
+            seq = data[0]
+            entry = pmbus_debug_pending.get(seq, {})
+            entry["data"] = {
+                "seq": seq,
+                "tx0": data[1],
+                "tx1": data[2],
+                "tx2": data[3],
+                "rx0": data[4],
+                "rx1": data[5],
+                "rx2": data[6],
+                "tx_len": (data[7] >> 4) & 0x0F,
+                "rx_len": data[7] & 0x0F,
+            }
+            pmbus_debug_pending[seq] = entry
+
+            if "meta" in entry:
+                append_pmbus_trace_line(seq)
+
+        elif can_id == CAN_ID_PMBUS_DBG_EXT:
+            if len(data) < 7:
+                return
+
+            seq = data[0]
+            entry = pmbus_debug_pending.get(seq, {})
+            entry["ext"] = {
+                "seq": seq,
+                "tx3": data[1],
+                "pec_calc": data[2],
+                "pec_rx": data[3],
+                "trace_flags": data[4],
+                "pec_mode": data[5],
+                "sercom_error_last": data[6],
+            }
+            pmbus_debug_pending[seq] = entry
+
+            if "meta" in entry and "data" in entry:
+                append_pmbus_trace_line(seq)
+
+
+def fault_flags_to_text(flags):
+    labels = []
+    for bit, name in enumerate(PMBUS_FAULT_NAMES):
+        if (flags >> bit) & 1:
+            labels.append(name)
+    return "|".join(labels) if labels else "NONE"
+
+
+def append_pmbus_trace_line(seq):
+    global pmbus_debug_pending, pmbus_debug_lines
+
+    entry = pmbus_debug_pending.get(seq)
+    if not entry:
+        return
+    if "meta" not in entry or "data" not in entry:
+        return
+
+    meta = entry["meta"]
+    dat = entry["data"]
+    ext = entry.get("ext", {})
+
+    op_name = PMBUS_OP_NAMES.get(meta["op"], f"OP{meta['op']}")
+    st_name = PMBUS_STATUS_NAMES.get(meta["status"], f"S{meta['status']}")
+    flags_text = fault_flags_to_text(meta["fault_flags"])
+    serr_name = SERCOM_ERR_NAMES.get(meta.get("sercom_error", 0), f"E{meta.get('sercom_error', 0)}")
+    trace_flag_bits = ext.get("trace_flags", 0)
+    trace_labels = [name for mask, name in PMBUS_TRACE_FLAG_NAMES.items() if (trace_flag_bits & mask) != 0]
+    trace_text = "|".join(trace_labels) if trace_labels else "-"
+    pec_mode = PMBUS_PEC_MODE_NAMES.get(ext.get("pec_mode", 255), f"M{ext.get('pec_mode', 255)}")
+
+    line = (
+        f"SEQ:{meta['seq']:03d} {op_name} "
+        f"A:0x{meta['addr']:02X} C:0x{meta['cmd']:02X} "
+        f"ST:{st_name} "
+        f"TX[{dat['tx_len']}]:{dat['tx0']:02X} {dat['tx1']:02X} {dat['tx2']:02X} {ext.get('tx3', 0):02X} "
+        f"RX[{dat['rx_len']}]:{dat['rx0']:02X} {dat['rx1']:02X} {dat['rx2']:02X} "
+        f"PEC:{ext.get('pec_calc', 0):02X}/{ext.get('pec_rx', 0):02X} "
+        f"SE:{serr_name} PM:{pec_mode} TF:{trace_text} F:{flags_text}"
+    )
+
+    pmbus_debug_lines.append(line)
+    del pmbus_debug_pending[seq]
 
 
 def decode_legacy_csv(line):
@@ -248,17 +427,19 @@ def decode_legacy_csv(line):
     if parts[0] == "510" and len(parts) >= 6:
         idx = int(parts[1])
         if 0 <= idx < EFUSE_COUNT:
-            voltage[idx] = int(parts[2])
-            current[idx] = int(parts[3])
-            power[idx] = int(parts[4])
-            status_word[idx] = int(parts[5], 16)
-            current_history[idx].append(current[idx])
+            with telemetry_lock:
+                voltage[idx] = int(parts[2])
+                current[idx] = int(parts[3])
+                power[idx] = int(parts[4])
+                status_word[idx] = int(parts[5], 16)
+                current_history[idx].append(current[idx])
         return True
 
     if parts[0] == "520" and len(parts) >= 4:
-        mcu_shunt = int(parts[1])
-        flt_bits = int(parts[2], 16)
-        system_flags = int(parts[3], 16)
+        with telemetry_lock:
+            mcu_shunt = int(parts[1])
+            flt_bits = int(parts[2], 16)
+            system_flags = int(parts[3], 16)
         return True
 
     return False
@@ -363,9 +544,9 @@ class PDUDashboard:
         self.build_serial_panel()
 
         self.build_top()
-        self.build_mcu()
+        self.build_dashboard_flags()
         self.build_plots()
-        self.build_serial_waterfall()
+        self.build_diagnostics_window()
 
         self.refresh_ports()
 
@@ -408,7 +589,7 @@ class PDUDashboard:
         ttk.Button(serial_frame, text="Disconnect", command=self.disconnect_port).pack(
             side="left", padx=4
         )
-        ttk.Button(serial_frame, text="Serial Window", command=self.show_serial_window).pack(
+        ttk.Button(serial_frame, text="Diagnostics Window", command=self.show_diagnostics_window).pack(
             side="left", padx=4
         )
 
@@ -447,6 +628,44 @@ class PDUDashboard:
     def disconnect_port(self):
         disconnect_serial_port()
 
+    def build_dashboard_flags(self):
+        flag_frame = tk.LabelFrame(self.root, text="System Flags")
+        flag_frame.pack(fill="x", pady=5)
+
+        self.flt_labels = []
+        flt_frame = tk.Frame(flag_frame)
+        flt_frame.pack(anchor="w", padx=4, pady=2)
+
+        for i in range(2):
+            lbl = tk.Label(flt_frame, text=f"FLT{i}", width=10, relief="groove")
+            lbl.grid(row=0, column=i, padx=2)
+            self.flt_labels.append(lbl)
+
+        self.sys_labels = []
+        sys_frame = tk.Frame(flag_frame)
+        sys_frame.pack(anchor="w", padx=4, pady=2)
+
+        for i in range(8):
+            lbl = tk.Label(sys_frame, text=system_flag_names[i], width=11, relief="groove")
+            lbl.grid(row=0, column=i, padx=2)
+            self.sys_labels.append(lbl)
+
+    def build_diagnostics_window(self):
+        self.diag_window = tk.Toplevel(self.root)
+        self.diag_window.title("PDU Diagnostics")
+        self.diag_window.geometry("1100x700")
+
+        self.build_mcu(self.diag_window)
+        self.build_serial_waterfall(self.diag_window)
+
+        self.diag_window.protocol("WM_DELETE_WINDOW", self.diag_window.withdraw)
+
+    def show_diagnostics_window(self):
+        if self.diag_window.state() == "withdrawn":
+            self.diag_window.deiconify()
+        self.diag_window.lift()
+        self.diag_window.focus_force()
+
     # ================= TOP EFUSE PANELS =================
 
     def build_top(self):
@@ -468,6 +687,12 @@ class PDUDashboard:
             p_label = tk.Label(frame, text="P: 0 (10mW)")
             p_label.pack()
 
+            adc_label = tk.Label(frame, text="ADC I: 0 mA @ 0 mV")
+            adc_label.pack()
+
+            compare_label = tk.Label(frame, text="ADC diff: n/a", width=22, relief="groove", bg="light gray")
+            compare_label.pack(pady=(2, 2))
+
             bit_frame = tk.Frame(frame)
             bit_frame.pack()
 
@@ -479,12 +704,12 @@ class PDUDashboard:
                 lbl.grid(row=b//4, column=b%4)
                 bit_labels.append(lbl)
 
-            self.efuse_frames.append((v_label, i_label, p_label, bit_labels))
+            self.efuse_frames.append((v_label, i_label, p_label, adc_label, compare_label, bit_labels))
 
     # ================= MCU PANEL =================
 
-    def build_mcu(self):
-        mcu_frame = tk.LabelFrame(self.root, text="MCU Telemetry")
+    def build_mcu(self, parent):
+        mcu_frame = tk.LabelFrame(parent, text="MCU Telemetry / PMBus Diagnostics")
         mcu_frame.pack(fill="x", pady=5)
 
         self.shunt_label = tk.Label(mcu_frame, text="Shunt: 0 mA")
@@ -502,6 +727,11 @@ class PDUDashboard:
         )
         self.mcu_debug_detail_label.pack()
 
+        pmbus_debug_frame = tk.LabelFrame(mcu_frame, text="PMBus Tx/Rx Waterfall")
+        pmbus_debug_frame.pack(fill="x", padx=4, pady=4)
+        self.pmbus_debug_listbox = tk.Listbox(pmbus_debug_frame, height=8)
+        self.pmbus_debug_listbox.pack(fill="x", padx=4, pady=4)
+
         error_list_frame = tk.LabelFrame(mcu_frame, text="Active Errors (1s TTL)")
         error_list_frame.pack(fill="x", padx=4, pady=4)
         self.error_listbox = tk.Listbox(error_list_frame, height=6)
@@ -513,25 +743,6 @@ class PDUDashboard:
         self.i2c_scan_label.pack(anchor="w", padx=4, pady=(2, 0))
         self.i2c_scan_listbox = tk.Listbox(i2c_scan_frame, height=3)
         self.i2c_scan_listbox.pack(fill="x", padx=4, pady=4)
-
-        self.flt_labels = []
-        flt_frame = tk.Frame(mcu_frame)
-        flt_frame.pack()
-
-        for i in range(2):
-            lbl = tk.Label(flt_frame, text=f"FLT{i}", width=8, relief="groove")
-            lbl.grid(row=0, column=i)
-            self.flt_labels.append(lbl)
-
-        self.sys_labels = []
-        sys_frame = tk.Frame(mcu_frame)
-        sys_frame.pack()
-
-        for i in range(8):
-            lbl = tk.Label(sys_frame, text=system_flag_names[i],
-                           width=8, relief="groove")
-            lbl.grid(row=0, column=i)
-            self.sys_labels.append(lbl)
 
         rename_btn = tk.Button(mcu_frame, text="Rename Flags",
                                command=self.rename_flags)
@@ -564,23 +775,12 @@ class PDUDashboard:
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    def build_serial_waterfall(self):
-        self.waterfall_window = tk.Toplevel(self.root)
-        self.waterfall_window.title("Serial Monitor")
-        self.waterfall_window.geometry("900x400")
-        self.waterfall_window.protocol("WM_DELETE_WINDOW", self.waterfall_window.withdraw)
-
-        waterfall_frame = tk.LabelFrame(self.waterfall_window, text="Serial Waterfall")
+    def build_serial_waterfall(self, parent):
+        waterfall_frame = tk.LabelFrame(parent, text="CAN/Serial Waterfall")
         waterfall_frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         self.waterfall_text = tk.Text(waterfall_frame, height=24, state="disabled")
         self.waterfall_text.pack(fill="both", expand=True)
-
-    def show_serial_window(self):
-        if self.waterfall_window.state() == "withdrawn":
-            self.waterfall_window.deiconify()
-        self.waterfall_window.lift()
-        self.waterfall_window.focus_force()
 
     def append_waterfall_line(self, text_line):
         self.waterfall_text.configure(state="normal")
@@ -622,36 +822,65 @@ class PDUDashboard:
             self.append_waterfall_line(message)
             drained += 1
 
+        with telemetry_lock:
+            local_voltage = list(voltage)
+            local_current = list(current)
+            local_power = list(power)
+            local_status_word = list(status_word)
+            local_adc_current = list(adc_current)
+            local_adc_voltage = list(adc_voltage)
+            local_adc_diff = list(adc_diff)
+            local_adc_flags = list(adc_flags)
+            local_histories = [list(history) for history in current_history]
+            local_mcu_shunt = mcu_shunt
+            local_flt_bits = flt_bits
+            local_system_flags = system_flags
+            local_mcu_dbg_stage = mcu_dbg_stage
+            local_mcu_dbg_error = mcu_dbg_error
+            local_mcu_dbg_fail_channel = mcu_dbg_fail_channel
+            local_mcu_dbg_fail_command = mcu_dbg_fail_command
+            local_active_error_details = dict(active_error_details)
+            local_i2c_scan_blocks = dict(i2c_scan_blocks)
+            local_pmbus_debug_lines = list(pmbus_debug_lines)
+
         # Update efuse panels
         for i in range(EFUSE_COUNT):
-            v_lbl, i_lbl, p_lbl, bit_lbls = self.efuse_frames[i]
+            v_lbl, i_lbl, p_lbl, adc_lbl, cmp_lbl, bit_lbls = self.efuse_frames[i]
 
-            v_lbl.config(text=f"V: {voltage[i]} mV")
-            i_lbl.config(text=f"I: {current[i]} mA")
-            p_lbl.config(text=f"P: {power[i]} (10mW)")
+            v_lbl.config(text=f"V: {local_voltage[i]} mV")
+            i_lbl.config(text=f"I: {local_current[i]} mA")
+            p_lbl.config(text=f"P: {local_power[i]} (10mW)")
+            adc_lbl.config(text=f"ADC I: {local_adc_current[i]} mA @ {local_adc_voltage[i]} mV")
+
+            if local_adc_flags[i] & 0x04:
+                cmp_lbl.config(text=f"ADC diff: {local_adc_diff[i]} mA", bg="red")
+            elif local_adc_flags[i] & 0x02:
+                cmp_lbl.config(text=f"ADC diff: {local_adc_diff[i]} mA", bg="green")
+            else:
+                cmp_lbl.config(text="ADC diff: n/a", bg="light gray")
 
             for b in range(16):
-                bit = (status_word[i] >> (15-b)) & 1
+                bit = (local_status_word[i] >> (15-b)) & 1
                 bit_lbls[b].config(bg="red" if bit else "green")
 
         # MCU
-        self.shunt_label.config(text=f"Shunt: {mcu_shunt} mA")
+        self.shunt_label.config(text=f"Shunt: {local_mcu_shunt} mA")
 
-        fail_ch_text = "-" if mcu_dbg_fail_channel == 0xFF else str(mcu_dbg_fail_channel)
-        err_name = MCU_ERR_NAMES.get(mcu_dbg_error, f"UNK_{mcu_dbg_error}")
-        cmd_name = PMBUS_CMD_NAMES.get(mcu_dbg_fail_command, f"CMD_0x{mcu_dbg_fail_command:02X}")
+        fail_ch_text = "-" if local_mcu_dbg_fail_channel == 0xFF else str(local_mcu_dbg_fail_channel)
+        err_name = MCU_ERR_NAMES.get(local_mcu_dbg_error, f"UNK_{local_mcu_dbg_error}")
+        cmd_name = PMBUS_CMD_NAMES.get(local_mcu_dbg_fail_command, f"CMD_0x{local_mcu_dbg_fail_command:02X}")
 
         self.mcu_debug_label.config(
-            text=f"Stage:{mcu_dbg_stage}  Err:{mcu_dbg_error}  FailCh:{fail_ch_text}  FailCmd:0x{mcu_dbg_fail_command:02X}"
+            text=f"Stage:{local_mcu_dbg_stage}  Err:{local_mcu_dbg_error}  FailCh:{fail_ch_text}  FailCmd:0x{local_mcu_dbg_fail_command:02X}"
         )
         self.mcu_debug_detail_label.config(
             text=f"Error:{err_name}  Command:{cmd_name}"
         )
 
         self.error_listbox.delete(0, tk.END)
-        if active_error_details:
-            for slot in sorted(active_error_details.keys()):
-                entry = active_error_details[slot]
+        if local_active_error_details:
+            for slot in sorted(local_active_error_details.keys()):
+                entry = local_active_error_details[slot]
                 err_code = entry["err"]
                 ch = entry["channel"]
                 cmd = entry["command"]
@@ -670,8 +899,8 @@ class PDUDashboard:
 
         ack_addresses = []
         total_found = 0
-        for slot in sorted(i2c_scan_blocks.keys()):
-            block = i2c_scan_blocks[slot]
+        for slot in sorted(local_i2c_scan_blocks.keys()):
+            block = local_i2c_scan_blocks[slot]
             base = block["base"]
             mask = block["mask"]
             total_found = max(total_found, block["found"])
@@ -681,20 +910,41 @@ class PDUDashboard:
 
         ack_addresses = sorted(set(ack_addresses))
         self.i2c_scan_listbox.delete(0, tk.END)
+        scan_start = None
+        scan_end = None
+        if local_i2c_scan_blocks:
+            first_slot = sorted(local_i2c_scan_blocks.keys())[0]
+            scan_start = local_i2c_scan_blocks[first_slot].get("start")
+            scan_end = local_i2c_scan_blocks[first_slot].get("end")
+
         if ack_addresses:
-            self.i2c_scan_label.config(text=f"ACK addresses found: {len(ack_addresses)} (reported: {total_found})")
+            if (scan_start is not None) and (scan_end is not None):
+                self.i2c_scan_label.config(text=f"ACK addresses found: {len(ack_addresses)} (reported: {total_found}) range:0x{scan_start:02X}-0x{scan_end:02X}")
+            else:
+                self.i2c_scan_label.config(text=f"ACK addresses found: {len(ack_addresses)} (reported: {total_found})")
             self.i2c_scan_listbox.insert(tk.END, " ".join([f"0x{addr:02X}" for addr in ack_addresses]))
         else:
-            self.i2c_scan_label.config(text="ACK addresses: none")
+            if (scan_start is not None) and (scan_end is not None):
+                self.i2c_scan_label.config(text=f"ACK addresses: none (range:0x{scan_start:02X}-0x{scan_end:02X})")
+            else:
+                self.i2c_scan_label.config(text="ACK addresses: none")
             self.i2c_scan_listbox.insert(tk.END, "No I2C ACKs in scan range")
 
         for i in range(2):
-            active = (flt_bits >> i) & 1
+            active = (local_flt_bits >> i) & 1
             self.flt_labels[i].config(bg="red" if active else "green")
 
         for i in range(8):
-            active = (system_flags >> i) & 1
+            active = (local_system_flags >> i) & 1
             self.sys_labels[i].config(bg="red" if active else "green")
+
+        self.pmbus_debug_listbox.delete(0, tk.END)
+        if local_pmbus_debug_lines:
+            for line in local_pmbus_debug_lines:
+                self.pmbus_debug_listbox.insert(tk.END, line)
+            self.pmbus_debug_listbox.see(tk.END)
+        else:
+            self.pmbus_debug_listbox.insert(tk.END, "No PMBus debug frames yet")
 
         # Plots
         self.ax[0].clear()
@@ -704,10 +954,10 @@ class PDUDashboard:
         idx1 = base
         idx2 = base + 1
 
-        self.ax[0].plot(current_history[idx1])
+        self.ax[0].plot(local_histories[idx1])
         self.ax[0].set_title(f"eFuse {idx1} Current (mA)")
 
-        self.ax[1].plot(current_history[idx2])
+        self.ax[1].plot(local_histories[idx2])
         self.ax[1].set_title(f"eFuse {idx2} Current (mA)")
 
         self.canvas.draw()

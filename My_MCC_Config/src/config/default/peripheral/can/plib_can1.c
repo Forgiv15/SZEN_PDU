@@ -109,7 +109,7 @@ void CAN1_Initialize(void)
     CAN1_REGS->CAN_CCCR |= CAN_CCCR_CCE_Msk;
 
     /* Set Nominal Bit timing and Prescaler Register */
-    CAN1_REGS->CAN_NBTP  = CAN_NBTP_NTSEG2(23UL) | CAN_NBTP_NTSEG1(70UL) | CAN_NBTP_NBRP(0UL) | CAN_NBTP_NSJW(23UL);
+    CAN1_REGS->CAN_NBTP  = CAN_NBTP_NTSEG2(0UL) | CAN_NBTP_NTSEG1(29UL) | CAN_NBTP_NBRP(2UL) | CAN_NBTP_NSJW(0UL);
 
 
     /* Global Filter Configuration Register */
@@ -170,17 +170,10 @@ bool CAN1_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
     uint32_t bufferNumber = 0U;
     uint8_t  tfqpi = 0U;
     uint8_t  count = 0U;
-    uint8_t  txFifoFreeLevel = 0U;
     bool transmitFifo_event = false;
 
-    if (!(((numberOfMessage < 1U) || (numberOfMessage > 1U)) || (txBuffer == NULL)))
+    if (!(((numberOfMessage < 1U) || (numberOfMessage > 4U)) || (txBuffer == NULL)))
     {
-        txFifoFreeLevel = (uint8_t)(CAN1_REGS->CAN_TXFQS & CAN_TXFQS_TFFL_Msk);
-        if (txFifoFreeLevel < numberOfMessage)
-        {
-            return false;
-        }
-
         tfqpi = (uint8_t)((CAN1_REGS->CAN_TXFQS & CAN_TXFQS_TFQPI_Msk) >> CAN_TXFQS_TFQPI_Pos);
 
         for (count = 0U; count < numberOfMessage; count++)
@@ -294,7 +287,7 @@ bool CAN1_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFif
             }
             txEvtFifo += sizeof(CAN_TX_EVENT_FIFO);
             txefgi++;
-            if (txefgi == 1U)
+            if (txefgi == 4U)
             {
                 txefgi = 0U;
             }
@@ -517,7 +510,7 @@ void CAN1_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
     can1Obj.msgRAMConfig.txEventFIFOAddress =  (can_txefe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN1_TX_EVENT_FIFO_SIZE;
     /* Transmit Event FIFO Configuration Register */
-    CAN1_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(1UL) |
+    CAN1_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(4UL) |
             CAN_TXEFC_EFSA((uint32_t)can1Obj.msgRAMConfig.txEventFIFOAddress);
 
 
