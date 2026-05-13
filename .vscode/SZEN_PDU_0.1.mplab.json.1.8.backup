@@ -1,5 +1,30 @@
 {
-    "version": "1.9",
+    "version": "1.8",
+    "configurations": [
+        {
+            "name": "default",
+            "id": "",
+            "device": "PIC32CM5164JH01064",
+            "imagePath": "./out/SZEN_PDU_0.1/default.elf",
+            "toolProperties": "default-tool-base",
+            "tool": "PICkit 5",
+            "packs": [
+                {
+                    "name": "PIC32CM-JH_DFP",
+                    "vendor": "Microchip",
+                    "version": "1.5.236"
+                },
+                {
+                    "name": "CMSIS",
+                    "vendor": "ARM",
+                    "version": "6.3.0"
+                }
+            ],
+            "fileSet": "default",
+            "toolchain": "default-XC32",
+            "userVariables": "default-uservariables"
+        }
+    ],
     "propertyGroups": [
         {
             "name": "default-uservariables",
@@ -196,35 +221,8 @@
                 "My_MCC_Config/src/config/default/peripheral/wdt/plib_wdt.h",
                 "My_MCC_Config/src/config/default/peripheral/wdt/plib_wdt.c",
                 "My_MCC_Config/src/config/default/peripheral/eic/plib_eic.h",
-                "My_MCC_Config/src/config/default/peripheral/eic/plib_eic.c",
-                ".venv/Lib/site-packages/contourpy/_contourpy.cp313-win_amd64.lib"
+                "My_MCC_Config/src/config/default/peripheral/eic/plib_eic.c"
             ]
-        }
-    ],
-    "configurations": [
-        {
-            "name": "default",
-            "id": "",
-            "device": "PIC32CM5164JH01064",
-            "imagePath": "./out/SZEN_PDU_0.1/default.elf",
-            "toolProperties": "default-tool-base",
-            "tool": "PICkit 5",
-            "packs": [
-                {
-                    "name": "PIC32CM-JH_DFP",
-                    "vendor": "Microchip",
-                    "version": "1.5.236"
-                },
-                {
-                    "name": "CMSIS",
-                    "vendor": "ARM",
-                    "version": "6.3.0"
-                }
-            ],
-            "fileSet": "default",
-            "toolchain": "default-XC32",
-            "userVariables": "default-uservariables",
-            "includeLegacyMacros": true
         }
     ]
 }

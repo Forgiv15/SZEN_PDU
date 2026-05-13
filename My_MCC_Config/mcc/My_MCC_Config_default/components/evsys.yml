@@ -156,7 +156,7 @@ data:
       - children:
         - attributes:
             id: eic
-            value: 'false'
+            value: 'true'
           type: Dynamic
         type: Values
       type: Boolean

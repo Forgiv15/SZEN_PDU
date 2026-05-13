@@ -172,7 +172,7 @@ void SYS_Initialize ( void* data )
     CAN1_Initialize();
     PDU_CAN_Init();
 
-	SYSTICK_TimerInitialize();
+  	SYSTICK_TimerInitialize();
     CAN0_Initialize();
 
     EIC_Initialize();

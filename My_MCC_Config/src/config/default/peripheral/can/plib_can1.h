@@ -83,10 +83,11 @@
 #define CAN1_TX_FIFO_BUFFER_ELEMENT_SIZE 16U
 #define CAN1_TX_FIFO_BUFFER_SIZE         64U
 #define CAN1_TX_EVENT_FIFO_SIZE          32U
+#define CAN1_STD_MSG_ID_FILTER_SIZE      20U
 
 /* CAN1_MESSAGE_RAM_CONFIG_SIZE to be used by application or driver
    for allocating buffer from non-cached contiguous memory */
-#define CAN1_MESSAGE_RAM_CONFIG_SIZE     128U
+#define CAN1_MESSAGE_RAM_CONFIG_SIZE     148U
 
 // *****************************************************************************
 // *****************************************************************************
@@ -102,6 +103,8 @@ bool CAN1_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage,
 CAN_ERROR CAN1_ErrorGet(void);
 void CAN1_ErrorCountGet(uint8_t *txErrorCount, uint8_t *rxErrorCount);
 void CAN1_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress);
+bool CAN1_StandardFilterElementSet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement);
+bool CAN1_StandardFilterElementGet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement);
 void CAN1_SleepModeEnter(void);
 void CAN1_SleepModeExit(void);
 bool CAN1_BitTimingCalculationGet(CAN_BIT_TIMING_SETUP *setup, CAN_BIT_TIMING *bitTiming);

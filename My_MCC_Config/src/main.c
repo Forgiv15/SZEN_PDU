@@ -26,7 +26,6 @@
 #include <stdbool.h>                    // Defines true
 #include <stdlib.h>                     // Defines EXIT_FAILURE
 #include "definitions.h"                // SYS function prototypes
-#include "peripheral/port/plib_port.h"
 #include "pdu.h"
 
 
@@ -38,10 +37,6 @@
 
 int main ( void )
 {
-  uint32_t tick_count = 0U;
-  uint32_t last_100ms_tick = 0U;
-  uint32_t last_1s_tick = 0U;
-
     /* Initialize all modules */
     SYS_Initialize( NULL );
     SYSTICK_TimerStart();
@@ -53,23 +48,8 @@ int main ( void )
         /* Maintain state machines of all polled MPLAB Harmony modules. */
         SYS_Tasks();
 
-    if (SYSTICK_TimerPeriodHasExpired()) {
-      tick_count++;
-      PDU_Task1ms();
+        PDU_Service();
     }
-
-    if ((tick_count - last_1s_tick) >= 1000U)
-    {
-      last_1s_tick += 1000U;
-      PDU_RunChecks();
-    }
-
-    if ((tick_count - last_100ms_tick) >= 100U)
-    {
-      last_100ms_tick += 100U;
-      PDU_PollAndSendTelemetry();
-    }
-  }
 
     /* Execution should not come here during normal operation */
     return ( EXIT_FAILURE );

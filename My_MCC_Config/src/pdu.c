@@ -11,22 +11,29 @@
 #include "tps25990.h"
 #include "definitions.h"
 
-/* Per-eFuse telemetry CAN base ID (0x500-0x507) */
-#define PDU_CAN_ID_EFUSE_BASE      0x500U
-#define PDU_CAN_ID_ADC_BASE        0x510U
-#define PDU_CAN_ID_TEMP_BASE       0x518U
-#define PDU_CAN_ID_MCU_TELEM       0x520U
-#define PDU_CAN_ID_ERR_DETAIL_BASE  0x530U
-#define PDU_CAN_ID_I2C_SCAN_BASE    0x540U
-#define PDU_CAN_ID_PMBUS_DBG_META   0x560U
-#define PDU_CAN_ID_PMBUS_DBG_DATA   0x561U
-#define PDU_CAN_ID_PMBUS_DBG_EXT    0x562U
-#define PDU_CAN_ID_CONTROL          0x580U
-#define PDU_CAN_ID_RETRY_MODE_CTRL  0x581U
-#define PDU_CAN_ID_FAULT_CTRL       0x582U
-#define PDU_CAN_ID_ADC_REF_CTRL     0x583U
-#define PDU_CAN_ID_RETRY_MODE_STAT  0x590U
-#define PDU_CAN_ID_ADC_REF_STAT     0x591U
+/* Aggregated control/telemetry IDs */
+#define PDU_CAN_ID_CONTROL_MASK     0x080U
+#define PDU_CAN_ID_CONTROL          0x200U
+#define PDU_CAN_ID_TELEM_SUMMARY    0x700U
+#define PDU_CAN_ID_TELEM_EXTRA      0x701U
+#define PDU_CAN_ID_ECU_RAW_DEBUG    0x702U
+
+/* Debug/verbose telemetry IDs (sent only when debug TTL active) */
+#define PDU_CAN_ID_EFUSE_BASE       0x710U  /* 0x710-0x717 */
+#define PDU_CAN_ID_ADC_BASE         0x720U  /* 0x720-0x727 */
+#define PDU_CAN_ID_TEMP_BASE        0x730U  /* 0x730-0x737 */
+#define PDU_CAN_ID_MCU_TELEM        0x740U
+#define PDU_CAN_ID_ERR_DETAIL_BASE  0x750U  /* 0x750-0x757 */
+#define PDU_CAN_ID_I2C_SCAN_BASE    0x760U  /* 0x760-0x763 */
+#define PDU_CAN_ID_PMBUS_DBG_META   0x770U
+#define PDU_CAN_ID_PMBUS_DBG_DATA   0x771U
+#define PDU_CAN_ID_PMBUS_DBG_EXT    0x772U
+#define PDU_CAN_ID_RETRY_MODE_STAT  0x790U
+#define PDU_CAN_ID_ADC_REF_STAT     0x791U
+#define PDU_ECU_RAW_FLAG_SEEN       (1U << 0)
+#define PDU_ECU_RAW_FLAG_FRESH      (1U << 1)
+#define PDU_ECU_RAW_FLAG_BYTE1      (1U << 2)
+#define PDU_ECU_RAW_FLAG_DLC_OK     (1U << 3)
 #define PDU_PMBUS_PEC_MODE_REQUIRED 0U
 #define PDU_CAN_STD_ID_SHIFT        18U
 #define PDU_CAN_TX_WAIT_LOOPS       50000UL
@@ -59,9 +66,23 @@
 
 #define PDU_ADC_COMPARE_CMD          0xA0U
 #define PDU_CONTROL_MAGIC            0xA5U
-#define PDU_RETRY_MODE_MAGIC         0xA6U
-#define PDU_FAULT_CTRL_MAGIC         0xA7U
-#define PDU_ADC_REF_MAGIC            0xA8U
+#define PDU_CONTROL_OP_OUTPUT        0x01U
+#define PDU_CONTROL_OP_RETRY_MODE    0x02U
+#define PDU_CONTROL_OP_CLEAR_FAULTS  0x03U
+#define PDU_CONTROL_OP_ADC_REF       0x04U
+#define PDU_CONTROL_OP_NOP           0x00U
+#define PDU_OVERRIDE_FLAG_ARMED      (1U << 0)
+#define PDU_OVERRIDE_FLAG_START_ON   (1U << 1)
+#define PDU_CONTROL_FLAG_DEBUG       (1U << 2)
+#define PDU_CONTROL_SOURCE_TIMEOUT_MS 2000U
+#define PDU_CONTROL_STATE_DEBUG_ACTIVE     (1U << 0)
+#define PDU_CONTROL_STATE_ECU_FRESH        (1U << 1)
+#define PDU_CONTROL_STATE_OVERRIDE_FRESH   (1U << 2)
+#define PDU_CONTROL_STATE_OVERRIDE_ARMED   (1U << 3)
+#define PDU_CONTROL_STATE_OVERRIDE_ACTIVE  (1U << 4)
+#define PDU_CONTROL_STATE_SAFETY_BLOCKED   (1U << 5)
+#define PDU_CONTROL_STATE_HYBRID_LATCHED   (1U << 6)
+#define PDU_CONTROL_STATE_START_ON         (1U << 7)
 #define PDU_CONTROL_CH_OTHER_FUSED   8U
 #define PDU_FAULT_TARGET_ALL         0xFFU
 #define PDU_ADC_FLAG_VALID           (1U << 0)
@@ -70,6 +91,14 @@
 #define PDU_ADC_MISMATCH_MIN_A       0.25f
 #define PDU_ADC_MISMATCH_MIN_DIFF_A  0.50f
 #define PDU_ADC_MISMATCH_RATIO       0.25f
+
+#define PDU_SUM_CURRENT_OVERCURRENT_A   60.0f
+#define PDU_HYBRID_CUTOFF_CURRENT_A     4.0f
+#define PDU_HYBRID_CUTOFF_VIN_V         10.0f
+#define PDU_VIN_AVG_SAMPLES             4U
+#define PDU_DEBUG_TTL_POLLS             10U
+#define PDU_ERRFLAG_OVERCURRENT         (1U << 0)
+#define PDU_ERRFLAG_BAD_VOLTAGE         (1U << 1)
 
 #define PDU_VIN_UV_CLEAR_POLLS       10U
 #define PDU_FET_OFF_REENABLE_POLLS   5U
@@ -159,8 +188,31 @@ static uint8_t pdu_i2c_scan_found_last = 0xFFU;
 static uint8_t pdu_i2c_scan_report_div = 0U;
 static uint8_t pdu_i2c_scan_div = 0U;
 static uint8_t pdu_comm_fail_streak = 0U;
-static bool pdu_desired_efuse_enabled[PDU_NUM_EFUSES] = { true, true, true, true, true, true, true, true };
+static volatile uint8_t pdu_debug_ttl_polls = 0U;
+static float pdu_vin_history[PDU_VIN_AVG_SAMPLES] = { 0.0f };
+static uint8_t pdu_vin_history_count = 0U;
+static uint8_t pdu_vin_history_index = 0U;
+static bool pdu_hybrid_cutoff_latched = false;
+static bool pdu_desired_efuse_enabled[PDU_NUM_EFUSES] = { false, false, false, false, false, false, false, false };
 static bool pdu_desired_other_fused_enabled = true;
+static uint8_t pdu_requested_output_mask = 0U;
+static uint8_t pdu_applied_output_mask = 0U;
+static volatile uint8_t pdu_ecu_output_mask = 0U;
+static volatile uint8_t pdu_ecu_raw_byte0 = 0U;
+static volatile uint8_t pdu_ecu_raw_byte1 = 0U;
+static volatile uint8_t pdu_ecu_raw_dlc = 0U;
+static volatile uint8_t pdu_ecu_raw_requested_mask = 0U;
+static volatile uint16_t pdu_ecu_raw_rx_count = 0U;
+static volatile uint8_t pdu_dashboard_override_mask = 0U;
+static volatile uint32_t pdu_ecu_output_mask_ms = 0U;
+static volatile uint32_t pdu_dashboard_override_ms = 0U;
+static volatile bool pdu_ecu_output_mask_valid = false;
+static volatile bool pdu_ecu_raw_seen = false;
+static volatile bool pdu_ecu_raw_used_byte1 = false;
+static volatile bool pdu_dashboard_override_valid = false;
+static volatile bool pdu_dashboard_override_armed = false;
+static volatile bool pdu_dashboard_override_start_enabled = true;
+static uint8_t pdu_active_control_source = 0U;
 static uint8_t pdu_desired_retry_mode = PDU_RETRY_MODE_RACE;
 static uint8_t pdu_active_retry_mode = 0U;
 static uint8_t pdu_desired_adc_reference = PDU_ADC_REF_EXTERNAL;
@@ -180,6 +232,13 @@ static volatile uint8_t pdu_safety_input_bits = 0U;
 static volatile bool pdu_safety_input_changed = false;
 static volatile bool pdu_safety_refresh_pending = false;
 static volatile uint32_t pdu_uptime_ms = 0U;
+static volatile bool pdu_control_service_pending = false;
+static volatile bool pdu_telemetry_service_pending = false;
+static volatile bool pdu_output_apply_pending = false;
+static volatile bool pdu_pending_control_valid = false;
+static volatile uint8_t pdu_pending_control_opcode = PDU_CONTROL_OP_NOP;
+static volatile uint8_t pdu_pending_control_param0 = 0U;
+static volatile uint8_t pdu_pending_control_param1 = 0U;
 static bool pdu_safety_inhibit_active = false;
 static bool pdu_safety_release_pending = false;
 static uint32_t pdu_safety_release_start_ms = 0U;
@@ -189,15 +248,35 @@ static void pdu_error_details_upsert(uint8_t err, uint8_t channel, uint8_t comma
 static bool pdu_apply_efuse_state(uint8_t channel, bool force);
 static bool pdu_apply_adc_reference(void);
 static uint8_t pdu_read_safety_inputs(void);
+static void pdu_poll_safety_inputs(void);
 static bool pdu_is_safety_interlocked_channel(uint8_t channel);
 static bool pdu_safety_outputs_are_blocked(void);
 static bool pdu_status_fet_off(uint16_t status);
 static bool pdu_rearm_enabled_efuse(uint8_t channel);
 static void pdu_set_efuse_gpio(uint8_t channel, bool enabled);
 static void pdu_force_safety_outputs_gpio_off(void);
+static void pdu_force_start_output_on(void);
+static bool pdu_apply_other_fused_state(void);
 static void pdu_invalidate_safety_output_cache(void);
 static void pdu_service_safety_inputs(void);
 static void pdu_safety_input_callback(uintptr_t context);
+static bool pdu_control_mask_is_fresh(uint32_t timestamp_ms, uint32_t timeout_ms);
+static bool pdu_ecu_control_is_fresh(void);
+static bool pdu_override_control_is_fresh(void);
+static uint8_t pdu_decode_ecu_output_mask(const CAN_RX_BUFFER *rx);
+static uint8_t pdu_capture_raw_ecu_output_mask(const CAN_RX_BUFFER *rx);
+static void pdu_set_requested_output_mask_bit(uint8_t channel, bool enabled);
+static uint8_t pdu_get_applied_output_mask(void);
+static uint8_t pdu_get_control_state_flags(void);
+static uint8_t pdu_get_raw_ecu_debug_flags(void);
+static uint8_t pdu_get_resolved_output_mask(bool *start_enabled, uint8_t *control_source);
+static void pdu_apply_resolved_gpio_outputs(void);
+static void pdu_resolve_output_control(void);
+static void pdu_handle_pending_control_command(void);
+static void pdu_service_control_100hz(void);
+static void pdu_can_rx_fifo_callback(uint8_t numberOfMessage, uintptr_t contextHandle);
+static void pdu_tc0_timer_callback(TC_TIMER_STATUS status, uintptr_t context);
+static bool pdu_can_send_ecu_raw_debug_frame(uint8_t flags, uint8_t decoded_mask, uint8_t requested_mask, uint8_t raw0, uint8_t raw1, uint8_t dlc, uint16_t rx_count);
 
 static void pdu_reset_fault_recovery_state(uint8_t channel)
 {
@@ -472,6 +551,27 @@ static uint8_t pdu_read_safety_inputs(void)
     return bits;
 }
 
+static void pdu_poll_safety_inputs(void)
+{
+    uint8_t sampled_inputs = pdu_read_safety_inputs();
+
+    if (sampled_inputs == pdu_safety_input_bits)
+    {
+        return;
+    }
+
+    pdu_safety_input_bits = sampled_inputs;
+    pdu_safety_input_changed = true;
+
+    if (sampled_inputs != 0U)
+    {
+        pdu_force_safety_outputs_gpio_off();
+        pdu_safety_refresh_pending = true;
+        pdu_output_apply_pending = true;
+        pdu_control_service_pending = true;
+    }
+}
+
 static bool pdu_is_safety_interlocked_channel(uint8_t channel)
 {
     return (channel == 0U) || (channel == 3U) || (channel == 4U);
@@ -507,6 +607,8 @@ static void pdu_safety_input_callback(uintptr_t context)
         pdu_safety_refresh_pending = true;
     }
     pdu_safety_input_changed = true;
+    pdu_output_apply_pending = true;
+    pdu_control_service_pending = true;
 }
 
 static void pdu_service_safety_inputs(void)
@@ -638,6 +740,253 @@ static void pdu_set_other_fused_gpio(bool enabled)
         GPIO_START_Set();
     } else {
         GPIO_START_Clear();
+    }
+}
+
+static void pdu_force_start_output_on(void)
+{
+    pdu_desired_other_fused_enabled = true;
+    pdu_set_other_fused_gpio(true);
+    pdu_applied_other_fused_valid = true;
+    pdu_applied_other_fused_enabled = true;
+}
+
+static bool pdu_apply_other_fused_state(void)
+{
+    pdu_set_other_fused_gpio(pdu_desired_other_fused_enabled);
+    pdu_applied_other_fused_valid = true;
+    pdu_applied_other_fused_enabled = pdu_desired_other_fused_enabled;
+    return true;
+}
+
+static bool pdu_control_mask_is_fresh(uint32_t timestamp_ms, uint32_t timeout_ms)
+{
+    return ((uint32_t)(pdu_uptime_ms - timestamp_ms) <= timeout_ms);
+}
+
+static bool pdu_ecu_control_is_fresh(void)
+{
+    return pdu_ecu_output_mask_valid && pdu_control_mask_is_fresh(pdu_ecu_output_mask_ms, PDU_CONTROL_SOURCE_TIMEOUT_MS);
+}
+
+static bool pdu_override_control_is_fresh(void)
+{
+    return pdu_dashboard_override_valid && pdu_control_mask_is_fresh(pdu_dashboard_override_ms, PDU_CONTROL_SOURCE_TIMEOUT_MS);
+}
+
+static uint8_t pdu_decode_ecu_output_mask(const CAN_RX_BUFFER *rx)
+{
+    if ((rx == NULL) || (rx->dlc == 0U))
+    {
+        return 0U;
+    }
+
+    if ((rx->dlc >= 2U) && (rx->data[0] == 0U) && (rx->data[1] != 0U))
+    {
+        return rx->data[1];
+    }
+
+    return rx->data[0];
+}
+
+static uint8_t pdu_capture_raw_ecu_output_mask(const CAN_RX_BUFFER *rx)
+{
+    uint8_t decoded_mask = pdu_decode_ecu_output_mask(rx);
+
+    if (rx == NULL)
+    {
+        return 0U;
+    }
+
+    pdu_ecu_raw_seen = true;
+    pdu_ecu_raw_dlc = rx->dlc;
+    pdu_ecu_raw_byte0 = (rx->dlc >= 1U) ? rx->data[0] : 0U;
+    pdu_ecu_raw_byte1 = (rx->dlc >= 2U) ? rx->data[1] : 0U;
+    pdu_ecu_raw_used_byte1 = ((rx->dlc >= 2U) && (rx->data[0] == 0U) && (rx->data[1] != 0U));
+    pdu_ecu_raw_requested_mask = decoded_mask;
+    pdu_ecu_raw_rx_count++;
+
+    return decoded_mask;
+}
+
+static void pdu_set_requested_output_mask_bit(uint8_t channel, bool enabled)
+{
+    uint8_t bit;
+
+    if (channel >= PDU_NUM_EFUSES)
+    {
+        return;
+    }
+
+    bit = (uint8_t)(1U << channel);
+    if (enabled)
+    {
+        pdu_ecu_output_mask |= bit;
+    }
+    else
+    {
+        pdu_ecu_output_mask &= (uint8_t)(~bit);
+    }
+
+    pdu_ecu_output_mask_valid = true;
+    pdu_ecu_output_mask_ms = pdu_uptime_ms;
+}
+
+static uint8_t pdu_get_applied_output_mask(void)
+{
+    uint8_t channel;
+    uint8_t mask = 0U;
+
+    for (channel = 0U; channel < PDU_NUM_EFUSES; channel++)
+    {
+        if (pdu_applied_efuse_valid[channel] && pdu_applied_efuse_enabled[channel])
+        {
+            mask |= (uint8_t)(1U << channel);
+        }
+    }
+
+    return mask;
+}
+
+static uint8_t pdu_get_control_state_flags(void)
+{
+    uint8_t flags = 0U;
+    bool ecu_fresh = pdu_ecu_control_is_fresh();
+    bool override_fresh = pdu_override_control_is_fresh();
+    bool override_active = (pdu_active_control_source == 2U);
+
+    if (pdu_debug_ttl_polls > 0U)
+    {
+        flags |= PDU_CONTROL_STATE_DEBUG_ACTIVE;
+    }
+    if (ecu_fresh)
+    {
+        flags |= PDU_CONTROL_STATE_ECU_FRESH;
+    }
+    if (override_fresh)
+    {
+        flags |= PDU_CONTROL_STATE_OVERRIDE_FRESH;
+    }
+    if (pdu_dashboard_override_armed)
+    {
+        flags |= PDU_CONTROL_STATE_OVERRIDE_ARMED;
+    }
+    if (override_active)
+    {
+        flags |= PDU_CONTROL_STATE_OVERRIDE_ACTIVE;
+    }
+    if (pdu_safety_outputs_are_blocked())
+    {
+        flags |= PDU_CONTROL_STATE_SAFETY_BLOCKED;
+    }
+    if (pdu_hybrid_cutoff_latched)
+    {
+        flags |= PDU_CONTROL_STATE_HYBRID_LATCHED;
+    }
+    if (pdu_applied_other_fused_valid && pdu_applied_other_fused_enabled)
+    {
+        flags |= PDU_CONTROL_STATE_START_ON;
+    }
+
+    return flags;
+}
+
+static uint8_t pdu_get_raw_ecu_debug_flags(void)
+{
+    uint8_t flags = 0U;
+
+    if (pdu_ecu_raw_seen)
+    {
+        flags |= PDU_ECU_RAW_FLAG_SEEN;
+    }
+    if (pdu_ecu_control_is_fresh())
+    {
+        flags |= PDU_ECU_RAW_FLAG_FRESH;
+    }
+    if (pdu_ecu_raw_used_byte1)
+    {
+        flags |= PDU_ECU_RAW_FLAG_BYTE1;
+    }
+    if (pdu_ecu_raw_dlc >= 1U)
+    {
+        flags |= PDU_ECU_RAW_FLAG_DLC_OK;
+    }
+
+    return flags;
+}
+
+static uint8_t pdu_get_resolved_output_mask(bool *start_enabled, uint8_t *control_source)
+{
+    uint8_t requested_mask = 0xFFU;
+    uint8_t source = 0U;
+    bool start_on = true;
+
+    if (pdu_dashboard_override_armed)
+    {
+        source = 2U;
+        requested_mask = pdu_dashboard_override_mask;
+        start_on = pdu_dashboard_override_start_enabled;
+    }
+    else if (pdu_ecu_control_is_fresh())
+    {
+        source = 1U;
+        requested_mask = pdu_ecu_output_mask;
+        start_on = true;
+    }
+
+    if (pdu_hybrid_cutoff_latched)
+    {
+        requested_mask &= (uint8_t)(~(1U << 0U));
+    }
+
+    if (start_enabled != NULL)
+    {
+        *start_enabled = start_on;
+    }
+
+    if (control_source != NULL)
+    {
+        *control_source = source;
+    }
+
+    return requested_mask;
+}
+
+static void pdu_apply_resolved_gpio_outputs(void)
+{
+    uint8_t channel;
+    uint8_t requested_mask;
+    bool start_enabled = true;
+    bool safety_blocked = pdu_safety_outputs_are_blocked();
+
+    requested_mask = pdu_get_resolved_output_mask(&start_enabled, NULL);
+
+    for (channel = 0U; channel < PDU_NUM_EFUSES; channel++)
+    {
+        bool enabled = ((requested_mask >> channel) & 0x01U) != 0U;
+
+        if (safety_blocked && pdu_is_safety_interlocked_channel(channel))
+        {
+            enabled = false;
+        }
+
+        pdu_set_efuse_gpio(channel, enabled);
+    }
+
+    pdu_set_other_fused_gpio(start_enabled);
+}
+
+static void pdu_resolve_output_control(void)
+{
+    uint8_t channel;
+    uint8_t control_source = 0U;
+    uint8_t requested_mask = pdu_get_resolved_output_mask(&pdu_desired_other_fused_enabled, &control_source);
+
+    pdu_active_control_source = control_source;
+    pdu_requested_output_mask = requested_mask;
+    for (channel = 0U; channel < PDU_NUM_EFUSES; channel++)
+    {
+        pdu_desired_efuse_enabled[channel] = ((requested_mask >> channel) & 0x01U) != 0U;
     }
 }
 
@@ -831,6 +1180,8 @@ static bool pdu_apply_requested_states(bool force)
     uint8_t channel;
     bool all_ok = true;
 
+    pdu_resolve_output_control();
+
     for (channel = 0U; channel < PDU_NUM_EFUSES; channel++)
     {
         if (!pdu_apply_efuse_state(channel, force))
@@ -839,12 +1190,9 @@ static bool pdu_apply_requested_states(bool force)
         }
     }
 
-    if (force || (!pdu_applied_other_fused_valid) || (pdu_applied_other_fused_enabled != pdu_desired_other_fused_enabled))
-    {
-        pdu_set_other_fused_gpio(pdu_desired_other_fused_enabled);
-        pdu_applied_other_fused_valid = true;
-        pdu_applied_other_fused_enabled = pdu_desired_other_fused_enabled;
-    }
+    (void)force;
+    (void)pdu_apply_other_fused_state();
+    pdu_applied_output_mask = pdu_get_applied_output_mask();
 
     return all_ok;
 }
@@ -898,11 +1246,129 @@ static void pdu_process_control_can(void)
             continue;
         }
 
-        if (pdu_can_std_id_decode(rx.id) == PDU_CAN_ID_RETRY_MODE_CTRL)
+        switch (pdu_can_std_id_decode(rx.id))
         {
-            if ((rx.dlc >= 2U) && (rx.data[1] == PDU_RETRY_MODE_MAGIC) && pdu_retry_mode_is_valid(rx.data[0]))
+            case PDU_CAN_ID_CONTROL_MASK:
+                (void)pdu_capture_raw_ecu_output_mask(&rx);
+                if (rx.dlc >= 1U)
+                {
+                    pdu_ecu_output_mask = pdu_ecu_raw_requested_mask;
+                    pdu_ecu_output_mask_valid = true;
+                    pdu_ecu_output_mask_ms = pdu_uptime_ms;
+                    pdu_apply_resolved_gpio_outputs();
+                    pdu_output_apply_pending = true;
+                    pdu_control_service_pending = true;
+                }
+                continue;
+
+            case PDU_CAN_ID_CONTROL:
+                if ((rx.dlc < 6U) || (rx.data[5] != PDU_CONTROL_MAGIC))
+                {
+                    continue;
+                }
+
+                pdu_dashboard_override_mask = rx.data[0];
+                pdu_dashboard_override_armed = (rx.data[1] & PDU_OVERRIDE_FLAG_ARMED) != 0U;
+                pdu_dashboard_override_start_enabled = (rx.data[1] & PDU_OVERRIDE_FLAG_START_ON) != 0U;
+                pdu_dashboard_override_valid = true;
+                pdu_dashboard_override_ms = pdu_uptime_ms;
+
+                if ((rx.data[1] & PDU_CONTROL_FLAG_DEBUG) != 0U)
+                {
+                    pdu_debug_ttl_polls = PDU_DEBUG_TTL_POLLS;
+                }
+
+                switch (rx.data[2])
+                {
+                    case PDU_CONTROL_OP_OUTPUT:
+                        if (rx.data[3] < PDU_NUM_EFUSES)
+                        {
+                            pdu_set_requested_output_mask_bit(rx.data[3], (rx.data[4] != 0U));
+                        }
+                        else if (rx.data[3] == PDU_CONTROL_CH_OTHER_FUSED)
+                        {
+                            pdu_dashboard_override_start_enabled = (rx.data[4] != 0U);
+                        }
+                        pdu_apply_resolved_gpio_outputs();
+                        pdu_output_apply_pending = true;
+                        pdu_control_service_pending = true;
+                        break;
+
+                    case PDU_CONTROL_OP_RETRY_MODE:
+                        pdu_pending_control_opcode = rx.data[2];
+                        pdu_pending_control_param0 = rx.data[3];
+                        pdu_pending_control_param1 = rx.data[4];
+                        pdu_pending_control_valid = true;
+                        pdu_control_service_pending = true;
+                        break;
+
+                    case PDU_CONTROL_OP_CLEAR_FAULTS:
+                        pdu_pending_control_opcode = rx.data[2];
+                        pdu_pending_control_param0 = rx.data[3];
+                        pdu_pending_control_param1 = rx.data[4];
+                        pdu_pending_control_valid = true;
+                        pdu_control_service_pending = true;
+                        break;
+
+                    case PDU_CONTROL_OP_ADC_REF:
+                        pdu_pending_control_opcode = rx.data[2];
+                        pdu_pending_control_param0 = rx.data[3];
+                        pdu_pending_control_param1 = rx.data[4];
+                        pdu_pending_control_valid = true;
+                        pdu_control_service_pending = true;
+                        break;
+
+                    case PDU_CONTROL_OP_NOP:
+                        pdu_apply_resolved_gpio_outputs();
+                        pdu_output_apply_pending = true;
+                        pdu_control_service_pending = true;
+                    default:
+                        break;
+                }
+                continue;
+
+            default:
+                continue;
+        }
+    }
+}
+
+static void pdu_handle_pending_control_command(void)
+{
+    uint8_t opcode;
+    uint8_t param0;
+    uint8_t param1;
+
+    if (!pdu_pending_control_valid)
+    {
+        return;
+    }
+
+    opcode = pdu_pending_control_opcode;
+    param0 = pdu_pending_control_param0;
+    param1 = pdu_pending_control_param1;
+    pdu_pending_control_valid = false;
+    pdu_pending_control_opcode = PDU_CONTROL_OP_NOP;
+
+    switch (opcode)
+    {
+        case PDU_CONTROL_OP_OUTPUT:
+            if (param0 < PDU_NUM_EFUSES)
             {
-                pdu_desired_retry_mode = rx.data[0];
+                pdu_set_requested_output_mask_bit(param0, (param1 != 0U));
+            }
+            else if (param0 == PDU_CONTROL_CH_OTHER_FUSED)
+            {
+                pdu_dashboard_override_start_enabled = (param1 != 0U);
+            }
+            pdu_apply_resolved_gpio_outputs();
+            pdu_output_apply_pending = true;
+            break;
+
+        case PDU_CONTROL_OP_RETRY_MODE:
+            if (pdu_retry_mode_is_valid(param0))
+            {
+                pdu_desired_retry_mode = param0;
                 if (!pdu_apply_retry_mode())
                 {
                     pdu_retry_mode_applied = false;
@@ -910,61 +1376,84 @@ static void pdu_process_control_can(void)
                     pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, TPS25990_CMD_RETRY_CONFIG);
                 }
             }
-            continue;
-        }
+            break;
 
-        if (pdu_can_std_id_decode(rx.id) == PDU_CAN_ID_FAULT_CTRL)
-        {
-            if ((rx.dlc >= 2U) && (rx.data[1] == PDU_FAULT_CTRL_MAGIC))
+        case PDU_CONTROL_OP_CLEAR_FAULTS:
+            if (!pdu_clear_requested_faults(param0))
             {
-                if (!pdu_clear_requested_faults(rx.data[0]))
-                {
-                    pdu_note_recovery_failure((rx.data[0] < PDU_NUM_EFUSES) ? rx.data[0] : 0xFFU, PMBUS_CMD_CLEAR_FAULTS);
-                }
+                pdu_note_recovery_failure((param0 < PDU_NUM_EFUSES) ? param0 : 0xFFU, PMBUS_CMD_CLEAR_FAULTS);
             }
-            continue;
-        }
+            break;
 
-        if (pdu_can_std_id_decode(rx.id) == PDU_CAN_ID_ADC_REF_CTRL)
-        {
-            if ((rx.dlc >= 2U) && (rx.data[1] == PDU_ADC_REF_MAGIC) && pdu_adc_reference_is_valid(rx.data[0]))
+        case PDU_CONTROL_OP_ADC_REF:
+            if (pdu_adc_reference_is_valid(param0))
             {
-                pdu_desired_adc_reference = rx.data[0];
+                pdu_desired_adc_reference = param0;
                 if (!pdu_apply_adc_reference())
                 {
                     pdu_error_set(PDU_ERR_ENABLE_FAIL);
                     pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PDU_ADC_REF_CMD);
                 }
             }
-            continue;
-        }
+            break;
 
-        if (pdu_can_std_id_decode(rx.id) != PDU_CAN_ID_CONTROL)
-        {
-            continue;
-        }
+        default:
+            break;
+    }
+}
 
-        if ((rx.dlc < 3U) || (rx.data[2] != PDU_CONTROL_MAGIC))
-        {
-            continue;
-        }
+static void pdu_service_control_100hz(void)
+{
+    bool en_ok;
 
-        if (rx.data[0] < PDU_NUM_EFUSES)
-        {
-            pdu_desired_efuse_enabled[rx.data[0]] = (rx.data[1] != 0U);
-            if (!pdu_apply_efuse_state(rx.data[0], true))
-            {
-                pdu_error_set(PDU_ERR_ENABLE_FAIL);
-                pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, rx.data[0], PMBUS_CMD_OPERATION);
-            }
-        }
-        else if (rx.data[0] == PDU_CONTROL_CH_OTHER_FUSED)
-        {
-            pdu_desired_other_fused_enabled = (rx.data[1] != 0U);
-            pdu_set_other_fused_gpio(pdu_desired_other_fused_enabled);
-            pdu_applied_other_fused_valid = true;
-            pdu_applied_other_fused_enabled = pdu_desired_other_fused_enabled;
-        }
+    pdu_debug_stage = PDU_STAGE_RUNCHECKS;
+    pdu_poll_safety_inputs();
+    pdu_service_safety_inputs();
+    pdu_handle_pending_control_command();
+
+    en_ok = pdu_apply_requested_states(false);
+    pdu_output_apply_pending = false;
+    if (!en_ok)
+    {
+        pdu_error_set(PDU_ERR_ENABLE_FAIL);
+        pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PMBUS_CMD_OPERATION);
+    }
+}
+
+static void pdu_can_rx_fifo_callback(uint8_t numberOfMessage, uintptr_t contextHandle)
+{
+    (void)numberOfMessage;
+    (void)contextHandle;
+
+    pdu_process_control_can();
+}
+
+static void pdu_tc0_timer_callback(TC_TIMER_STATUS status, uintptr_t context)
+{
+    static uint8_t control_div = 0U;
+    static uint8_t telemetry_div = 0U;
+
+    (void)context;
+
+    if ((status & TC_TIMER_STATUS_OVERFLOW) == 0U)
+    {
+        return;
+    }
+
+    pdu_uptime_ms++;
+
+    control_div++;
+    if (control_div >= 10U)
+    {
+        control_div = 0U;
+        pdu_control_service_pending = true;
+    }
+
+    telemetry_div++;
+    if (telemetry_div >= 100U)
+    {
+        telemetry_div = 0U;
+        pdu_telemetry_service_pending = true;
     }
 }
 
@@ -990,6 +1479,31 @@ static uint16_t pdu_float_to_u16_scaled(float value, float scale)
 static float pdu_absf(float value)
 {
     return (value < 0.0f) ? -value : value;
+}
+
+static float pdu_vin_average_update(float vin_v)
+{
+    uint8_t count;
+    float sum = 0.0f;
+
+    pdu_vin_history[pdu_vin_history_index] = vin_v;
+    pdu_vin_history_index = (uint8_t)((pdu_vin_history_index + 1U) % PDU_VIN_AVG_SAMPLES);
+    if (pdu_vin_history_count < PDU_VIN_AVG_SAMPLES)
+    {
+        pdu_vin_history_count++;
+    }
+
+    for (count = 0U; count < pdu_vin_history_count; count++)
+    {
+        sum += pdu_vin_history[count];
+    }
+
+    if (pdu_vin_history_count == 0U)
+    {
+        return 0.0f;
+    }
+
+    return sum / (float)pdu_vin_history_count;
 }
 
 static bool pdu_adc_current_mismatch(float pmbus_current_a, float adc_current_a, float *diff_out)
@@ -1211,6 +1725,96 @@ static bool pdu_can_send_adc_ref_frame(uint8_t reference, uint8_t applied)
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
 
+static bool pdu_can_send_summary_frame(
+    uint16_t vin_mv_avg,
+    uint16_t sum_current_dA,
+    int16_t temp_avg_c_x10,
+    uint8_t err_flags,
+    uint8_t flt_bitmap)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_TELEM_SUMMARY);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(vin_mv_avg & 0xFFU);
+    tx.data[1] = (uint8_t)((vin_mv_avg >> 8) & 0xFFU);
+    tx.data[2] = (uint8_t)(sum_current_dA & 0xFFU);
+    tx.data[3] = (uint8_t)((sum_current_dA >> 8) & 0xFFU);
+    tx.data[4] = (uint8_t)(temp_avg_c_x10 & 0xFFU);
+    tx.data[5] = (uint8_t)(((uint16_t)temp_avg_c_x10 >> 8) & 0xFFU);
+    tx.data[6] = err_flags;
+    tx.data[7] = flt_bitmap;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_summary_extra_frame(
+    int16_t temp_peak_c_x10,
+    uint8_t system_flags,
+    uint8_t control_state_flags,
+    uint8_t requested_mask,
+    uint8_t applied_mask,
+    uint8_t ecu_mask,
+    uint8_t dashboard_mask)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_TELEM_EXTRA);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(temp_peak_c_x10 & 0xFFU);
+    tx.data[1] = (uint8_t)(((uint16_t)temp_peak_c_x10 >> 8) & 0xFFU);
+    tx.data[2] = system_flags;
+    tx.data[3] = control_state_flags;
+    tx.data[4] = requested_mask;
+    tx.data[5] = applied_mask;
+    tx.data[6] = ecu_mask;
+    tx.data[7] = dashboard_mask;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
 static bool pdu_can_send_mcu_frame(
     uint8_t flt_bitmap,
     uint8_t system_flags,
@@ -1252,6 +1856,45 @@ static bool pdu_can_send_mcu_frame(
     tx.data[5] = dbg_error;
     tx.data[6] = dbg_fail_channel;
     tx.data[7] = dbg_fail_command;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_ecu_raw_debug_frame(uint8_t flags, uint8_t decoded_mask, uint8_t requested_mask, uint8_t raw0, uint8_t raw1, uint8_t dlc, uint16_t rx_count)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_ECU_RAW_DEBUG);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = flags;
+    tx.data[1] = decoded_mask;
+    tx.data[2] = raw0;
+    tx.data[3] = raw1;
+    tx.data[4] = dlc;
+    tx.data[5] = (uint8_t)(rx_count & 0xFFU);
+    tx.data[6] = (uint8_t)((rx_count >> 8) & 0xFFU);
+    tx.data[7] = requested_mask;
 
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
@@ -1389,6 +2032,18 @@ static bool pdu_can_send_pmbus_dbg_ext_frame(const pmbus_trace_t *trace)
     tx.data[7] = 0U;
 
     return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_pmbus_trace_frames(const pmbus_trace_t *trace)
+{
+    if (trace == NULL)
+    {
+        return false;
+    }
+
+    return pdu_can_send_pmbus_dbg_meta_frame(trace) &&
+           pdu_can_send_pmbus_dbg_data_frame(trace) &&
+           pdu_can_send_pmbus_dbg_ext_frame(trace);
 }
 
 static uint8_t pdu_pmbus_status_to_error_code(pmbus_status_t st)
@@ -1749,6 +2404,10 @@ void PDU_Init(void)
     /* Force-enable all GPIO output enable pins (active-high) */
     pdu_enable_all_gpio_outputs();
 
+    CAN1_RxFifoCallbackRegister(CAN_RX_FIFO_0, pdu_can_rx_fifo_callback, 0U);
+    TC0_TimerCallbackRegister(pdu_tc0_timer_callback, 0U);
+    TC0_TimerStart();
+
     EIC_CallbackRegister(EIC_PIN_0, pdu_safety_input_callback, 0U);
     EIC_CallbackRegister(EIC_PIN_1, pdu_safety_input_callback, 0U);
     EIC_CallbackRegister(EIC_PIN_2, pdu_safety_input_callback, 0U);
@@ -1761,6 +2420,17 @@ void PDU_Init(void)
     pdu_safety_release_pending = false;
     pdu_safety_release_start_ms = 0U;
     pdu_uptime_ms = 0U;
+    pdu_ecu_raw_byte0 = 0U;
+    pdu_ecu_raw_byte1 = 0U;
+    pdu_ecu_raw_dlc = 0U;
+    pdu_ecu_raw_requested_mask = 0U;
+    pdu_ecu_raw_rx_count = 0U;
+    pdu_ecu_raw_seen = false;
+    pdu_ecu_raw_used_byte1 = false;
+    pdu_control_service_pending = false;
+    pdu_telemetry_service_pending = false;
+    pdu_output_apply_pending = false;
+    pdu_pending_control_valid = false;
     if (pdu_safety_input_bits != 0U)
     {
         pdu_safety_inhibit_active = true;
@@ -1808,26 +2478,35 @@ void PDU_Init(void)
         pdu_error_set(PDU_ERR_ENABLE_FAIL);
         pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PDU_ADC_REF_CMD);
     }
+    pdu_force_start_output_on();
     (void)pdu_apply_requested_states(true);
 }
 
-void PDU_Task1ms(void)
+void PDU_Service(void)
 {
-    pdu_uptime_ms++;
-    pdu_service_safety_inputs();
-}
+    bool run_control = false;
+    bool run_telemetry = false;
 
-void PDU_RunChecks(void)
-{
-    bool en_ok;
+    if (pdu_control_service_pending || pdu_output_apply_pending || pdu_pending_control_valid || pdu_safety_input_changed || pdu_safety_refresh_pending)
+    {
+        pdu_control_service_pending = false;
+        run_control = true;
+    }
 
-    pdu_debug_stage = PDU_STAGE_RUNCHECKS;
+    if (pdu_telemetry_service_pending)
+    {
+        pdu_telemetry_service_pending = false;
+        run_telemetry = true;
+    }
 
-    pdu_process_control_can();
-    en_ok = pdu_apply_requested_states(false);
-    if (!en_ok) {
-        pdu_error_set(PDU_ERR_ENABLE_FAIL);
-        pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PMBUS_CMD_OPERATION);
+    if (run_control)
+    {
+        pdu_service_control_100hz();
+    }
+
+    if (run_telemetry)
+    {
+        PDU_PollAndSendTelemetry();
     }
 }
 
@@ -1839,11 +2518,30 @@ void PDU_PollAndSendTelemetry(void)
     uint16_t shunt_ma = 0U;
     pmbus_trace_t pmbus_trace;
     uint8_t cycle_ok_count = 0U;
+    float sum_current_ma = 0.0f;
+    float vin_cycle_sum_v = 0.0f;
+    uint8_t vin_cycle_count = 0U;
+    float temp_sum_c = 0.0f;
+    uint8_t temp_count = 0U;
+    float temp_peak_c = -200.0f;
+    float hybrid_current_a = 0.0f;
+    bool hybrid_current_valid = false;
+    bool hybrid_cutoff_trigger = false;
+    uint8_t err_flags = 0U;
 
     pdu_debug_stage = PDU_STAGE_TELEMETRY;
     pdu_error_age();
     pdu_error_details_age();
-    pdu_process_control_can();
+    if (pdu_i2c_scan_div >= 10U)
+    {
+        pdu_i2c_scan_div = 0U;
+        pdu_i2c_scan_update();
+        pdu_i2c_scan_report_if_needed();
+    }
+    else
+    {
+        pdu_i2c_scan_div++;
+    }
     pdu_fail_channel = 0xFFU;
     pdu_fail_command = 0U;
     pdu_last_error = 0U;
@@ -1853,6 +2551,7 @@ void PDU_PollAndSendTelemetry(void)
         uint16_t vraw = 0U;
         uint16_t iraw = 0U;
         uint16_t praw = 0U;
+        uint16_t vin_raw = 0U;
         uint16_t mv = 0U;
         uint16_t ma = 0U;
         uint16_t p_10mw = 0U;
@@ -1869,6 +2568,7 @@ void PDU_PollAndSendTelemetry(void)
         float pmbus_current_a = 0.0f;
         float adc_diff_a = 0.0f;
         float temp_c = 0.0f;
+        float vin_v = 0.0f;
         pmbus_status_t st;
         uint8_t failed_cmd = PMBUS_CMD_READ_VOUT;
 
@@ -1877,8 +2577,13 @@ void PDU_PollAndSendTelemetry(void)
         adc_mv = pdu_float_to_u16_scaled(adc_voltage_v, 1000.0f);
         adc_ma = pdu_float_to_u16_scaled(adc_current_a, 1000.0f);
 
-        failed_cmd = PMBUS_CMD_READ_VOUT;
-        st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw);
+        failed_cmd = PMBUS_CMD_READ_VIN;
+        st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VIN, &vin_raw);
+        if (st == PMBUS_OK)
+        {
+            failed_cmd = PMBUS_CMD_READ_VOUT;
+            st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw);
+        }
         if (st == PMBUS_OK)
         {
             failed_cmd = PMBUS_CMD_READ_IIN;
@@ -1908,6 +2613,9 @@ void PDU_PollAndSendTelemetry(void)
         if (st == PMBUS_OK)
         {
             cycle_ok_count++;
+            vin_v = tps25990_decode_vin(vin_raw);
+            vin_cycle_sum_v += vin_v;
+            vin_cycle_count++;
             mv = pdu_float_to_u16_scaled(tps25990_decode_vout(vraw), 1000.0f);
             pmbus_current_a = tps25990_decode_iin_with_r_imon(iraw, pdu_r_imon_ohms[i]);
             ma = pdu_float_to_u16_scaled(pmbus_current_a, 1000.0f);
@@ -1915,6 +2623,19 @@ void PDU_PollAndSendTelemetry(void)
             temp_c = tps25990_decode_temp(temp_raw);
             temp_valid = 1U;
             adc_flags |= PDU_ADC_FLAG_PMBUS_VALID;
+
+            sum_current_ma += (pmbus_current_a * 1000.0f);
+            if (i == 0U)
+            {
+                hybrid_current_a = pmbus_current_a;
+                hybrid_current_valid = true;
+            }
+            temp_sum_c += temp_c;
+            temp_count++;
+            if (temp_c > temp_peak_c)
+            {
+                temp_peak_c = temp_c;
+            }
 
             if (pdu_adc_current_mismatch(pmbus_current_a, adc_current_a, &adc_diff_a))
             {
@@ -1951,14 +2672,17 @@ void PDU_PollAndSendTelemetry(void)
             }
         }
 
-        if (!pdu_can_send_adc_frame((uint16_t)(PDU_CAN_ID_ADC_BASE + i), adc_ma, adc_mv, diff_ma, adc_flags, cml_raw)) {
-            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
-            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, i, 0x10U);
-        }
+        if (pdu_debug_ttl_polls > 0U)
+        {
+            if (!pdu_can_send_adc_frame((uint16_t)(PDU_CAN_ID_ADC_BASE + i), adc_ma, adc_mv, diff_ma, adc_flags, cml_raw)) {
+                pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+                pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, i, 0x10U);
+            }
 
-        if (!pdu_can_send_temp_frame((uint16_t)(PDU_CAN_ID_TEMP_BASE + i), (int16_t)(temp_c * 10.0f), temp_valid)) {
-            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
-            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, i, PMBUS_CMD_READ_TEMP);
+            if (!pdu_can_send_temp_frame((uint16_t)(PDU_CAN_ID_TEMP_BASE + i), (int16_t)(temp_c * 10.0f), temp_valid)) {
+                pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+                pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, i, PMBUS_CMD_READ_TEMP);
+            }
         }
     }
 
@@ -1983,6 +2707,41 @@ void PDU_PollAndSendTelemetry(void)
     }
 
     shunt_ma = pdu_float_to_u16_scaled(PDU_ADC_ReadNonfuseCurrent(), 1000.0f);
+    sum_current_ma += (float)shunt_ma;
+
+    /* VIN moving average across cycles */
+    {
+        float vin_cycle_avg_v = (vin_cycle_count > 0U) ? (vin_cycle_sum_v / (float)vin_cycle_count) : 0.0f;
+        vin_cycle_avg_v = pdu_vin_average_update(vin_cycle_avg_v);
+        if ((vin_cycle_avg_v > 0.0f) && ((vin_cycle_avg_v * 1000.0f) < 10000.0f || (vin_cycle_avg_v * 1000.0f) > 15000.0f))
+        {
+            err_flags |= PDU_ERRFLAG_BAD_VOLTAGE;
+        }
+
+        if (!pdu_hybrid_cutoff_latched && (vin_cycle_avg_v < PDU_HYBRID_CUTOFF_VIN_V) && hybrid_current_valid && (hybrid_current_a > PDU_HYBRID_CUTOFF_CURRENT_A))
+        {
+            pdu_hybrid_cutoff_latched = true;
+            pdu_resolve_output_control();
+            (void)pdu_apply_efuse_state(0U, true);
+        }
+        else if (pdu_hybrid_cutoff_latched && (vin_cycle_avg_v >= PDU_HYBRID_CUTOFF_VIN_V))
+        {
+            pdu_hybrid_cutoff_latched = false;
+        }
+
+        /* Save VIN average in millivolts for summary send below */
+        vin_cycle_sum_v = vin_cycle_avg_v * 1000.0f;
+    }
+
+    if (sum_current_ma >= (PDU_SUM_CURRENT_OVERCURRENT_A * 1000.0f))
+    {
+        err_flags |= PDU_ERRFLAG_OVERCURRENT;
+    }
+
+    if (temp_count == 0U)
+    {
+        temp_peak_c = 0.0f;
+    }
 
     pdu_debug_flags = pdu_error_bitmap_get();
 
@@ -2006,38 +2765,74 @@ void PDU_PollAndSendTelemetry(void)
         flt_bitmap |= PDU_FLT_BITMAP_INERTIA;
     }
 
+    {
+        uint16_t vin_mv_avg = (uint16_t)((vin_cycle_sum_v >= 0.0f) ? (vin_cycle_sum_v + 0.5f) : 0.0f);
+        uint16_t sum_current_dA = (uint16_t)((sum_current_ma >= 0.0f) ? ((sum_current_ma + 50.0f) / 100.0f) : 0.0f);
+        int16_t temp_avg_c_x10 = (temp_count > 0U) ? (int16_t)((temp_sum_c / (float)temp_count) * 10.0f) : 0;
+        int16_t temp_peak_c_x10 = (int16_t)(temp_peak_c * 10.0f);
+        uint8_t control_state_flags = pdu_get_control_state_flags();
+        uint8_t ecu_mask = ((control_state_flags & PDU_CONTROL_STATE_ECU_FRESH) != 0U) ? pdu_ecu_output_mask : 0U;
+        uint8_t dashboard_mask = ((control_state_flags & PDU_CONTROL_STATE_OVERRIDE_FRESH) != 0U) ? pdu_dashboard_override_mask : 0U;
+        uint8_t raw_ecu_flags = pdu_get_raw_ecu_debug_flags();
+        if (!pdu_can_send_summary_frame(vin_mv_avg, sum_current_dA, temp_avg_c_x10, err_flags, flt_bitmap))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        }
+        if (!pdu_can_send_summary_extra_frame(temp_peak_c_x10, pdu_debug_flags, control_state_flags, pdu_requested_output_mask, pdu_applied_output_mask, ecu_mask, dashboard_mask))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        }
+        if (!pdu_can_send_ecu_raw_debug_frame(raw_ecu_flags, pdu_ecu_raw_requested_mask, pdu_ecu_raw_requested_mask, pdu_ecu_raw_byte0, pdu_ecu_raw_byte1, pdu_ecu_raw_dlc, pdu_ecu_raw_rx_count))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        }
+    }
+
     if (!pdu_can_send_mcu_frame(
             flt_bitmap,
             pdu_debug_flags,
             shunt_ma,
-            pdu_debug_stage,
-            pdu_last_error,
-            pdu_fail_channel,
-            pdu_fail_command)) {
+            (pdu_debug_ttl_polls > 0U) ? pdu_debug_stage : 0U,
+            (pdu_debug_ttl_polls > 0U) ? pdu_last_error : 0U,
+            (pdu_debug_ttl_polls > 0U) ? pdu_fail_channel : 0xFFU,
+            (pdu_debug_ttl_polls > 0U) ? pdu_fail_command : 0U)) {
         pdu_error_set(PDU_ERR_CAN_TX_FAIL);
         pdu_debug_flags = pdu_error_bitmap_get();
         pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, 0x00U);
     }
 
-    if (!pdu_can_send_retry_mode_frame(pdu_active_retry_mode, pdu_retry_mode_applied ? 1U : 0U))
+    if (pdu_debug_ttl_polls > 0U)
     {
-        pdu_error_set(PDU_ERR_CAN_TX_FAIL);
-        pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, TPS25990_CMD_RETRY_CONFIG);
-    }
+        if (!pdu_can_send_retry_mode_frame(pdu_active_retry_mode, pdu_retry_mode_applied ? 1U : 0U))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, TPS25990_CMD_RETRY_CONFIG);
+        }
 
-    if (!pdu_can_send_adc_ref_frame(pdu_active_adc_reference, pdu_adc_reference_applied ? 1U : 0U))
-    {
-        pdu_error_set(PDU_ERR_CAN_TX_FAIL);
-        pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, PDU_ADC_REF_CMD);
-    }
+        if (!pdu_can_send_adc_ref_frame(pdu_active_adc_reference, pdu_adc_reference_applied ? 1U : 0U))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+            pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, PDU_ADC_REF_CMD);
+        }
 
-    for (detail_slot = 0U; detail_slot < PDU_ERROR_DETAIL_MAX; detail_slot++)
-    {
-        (void)pdu_can_send_error_detail_frame(detail_slot);
-    }
+        for (detail_slot = 0U; detail_slot < PDU_ERROR_DETAIL_MAX; detail_slot++)
+        {
+            (void)pdu_can_send_error_detail_frame(detail_slot);
+        }
 
-    while (pmbus_trace_pop(&pmbus_trace))
-    {
-        (void)pmbus_trace;
+        while (pmbus_trace_pop(&pmbus_trace))
+        {
+            if (!pdu_can_send_pmbus_trace_frames(&pmbus_trace))
+            {
+                pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+                pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, pmbus_trace.command);
+                break;
+            }
+        }
+
+        if (pdu_debug_ttl_polls > 0U)
+        {
+            pdu_debug_ttl_polls--;
+        }
     }
 }
