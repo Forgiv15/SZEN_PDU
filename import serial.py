@@ -114,6 +114,7 @@ MCU_ERR_NAMES = {
     10: "CAN_TX",
     20: "ENABLE_FAIL",
     21: "SCAN_NO_ACK",
+    22: "SCAN_MISSING_ADDR",
     30: "ADC_MISMATCH",
 }
 
@@ -269,6 +270,39 @@ serial_error = "Not connected"
 serial_instance = None
 serial_state_lock = threading.Lock()
 telemetry_lock = threading.Lock()
+
+
+HYBRID_EFUSE_ADDR = 0x45
+
+
+def get_i2c_scan_addresses(scan_blocks):
+    addresses = set()
+
+    for block in scan_blocks.values():
+        base = int(block.get("base", 0))
+        mask = int(block.get("mask", 0))
+
+        for bit in range(8):
+            if (mask >> bit) & 0x01:
+                addresses.add(base + bit)
+
+    return sorted(addr for addr in addresses if 0 <= addr <= 0x7F)
+
+
+def get_i2c_scan_summary(scan_blocks):
+    if not scan_blocks:
+        return None
+
+    first_slot = sorted(scan_blocks.keys())[0]
+    first_block = scan_blocks[first_slot]
+    addresses = get_i2c_scan_addresses(scan_blocks)
+
+    return {
+        "start": int(first_block.get("start", 0x40)),
+        "end": int(first_block.get("end", 0x59)),
+        "found": int(first_block.get("found", len(addresses))),
+        "addresses": addresses,
+    }
 
 
 def list_available_ports():
@@ -1251,6 +1285,22 @@ class PDUDashboard:
         )
         self.ecu_raw_debug_label.pack()
 
+        self.i2c_scan_status_label = tk.Label(
+            mcu_frame,
+            text="I2C scan: waiting for 0x760-0x763",
+            anchor="w",
+        )
+        self.i2c_scan_status_label.pack(fill="x", padx=4)
+
+        self.i2c_hybrid_status_label = tk.Label(
+            mcu_frame,
+            text="Hybrid eFuse 0x45: waiting for scan",
+            anchor="w",
+            relief="groove",
+            bg="gold",
+        )
+        self.i2c_hybrid_status_label.pack(fill="x", padx=4, pady=(2, 4))
+
         error_list_frame = tk.LabelFrame(mcu_frame, text="Active Errors (1s TTL)")
         error_list_frame.pack(fill="x", padx=4, pady=4)
         self.error_listbox = tk.Listbox(error_list_frame, height=6)
@@ -1425,6 +1475,7 @@ class PDUDashboard:
             local_ecu_raw_byte1 = ecu_raw_byte1
             local_ecu_raw_dlc = ecu_raw_dlc
             local_ecu_raw_rx_count = ecu_raw_rx_count
+            local_i2c_scan_blocks = dict(i2c_scan_blocks)
 
         self.latest_control_state_flags = local_control_state_flags
         self.latest_requested_output_mask = local_requested_output_mask
@@ -1557,6 +1608,32 @@ class PDUDashboard:
                 f"count={local_ecu_raw_rx_count}"
             )
         )
+
+        i2c_summary = get_i2c_scan_summary(local_i2c_scan_blocks)
+        if i2c_summary is None:
+            self.i2c_scan_status_label.config(text="I2C scan: waiting for 0x760-0x763")
+            self.i2c_hybrid_status_label.config(text="Hybrid eFuse 0x45: waiting for scan", bg="gold")
+        else:
+            address_text = " ".join(f"0x{addr:02X}" for addr in i2c_summary["addresses"])
+            if not address_text:
+                address_text = "none"
+
+            self.i2c_scan_status_label.config(
+                text=(
+                    f"I2C scan 0x{i2c_summary['start']:02X}-0x{i2c_summary['end']:02X}: "
+                    f"found={i2c_summary['found']} addrs={address_text}"
+                )
+            )
+
+            hybrid_present = HYBRID_EFUSE_ADDR in i2c_summary["addresses"]
+            self.i2c_hybrid_status_label.config(
+                text=(
+                    "Hybrid eFuse 0x45: PRESENT in scan"
+                    if hybrid_present else
+                    "Hybrid eFuse 0x45: MISSING from scan"
+                ),
+                bg="green" if hybrid_present else "red",
+            )
 
         self.error_listbox.delete(0, tk.END)
         if local_active_error_details:

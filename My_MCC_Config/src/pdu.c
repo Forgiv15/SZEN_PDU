@@ -62,6 +62,7 @@
 #define PDU_ERR_CODE_CAN_TX_FAIL     10U
 #define PDU_ERR_CODE_ENABLE_FAIL     20U
 #define PDU_ERR_CODE_SCAN_NO_ACK     21U
+#define PDU_ERR_CODE_SCAN_ADDR_MISS  22U
 #define PDU_ERR_CODE_ADC_MISMATCH    30U
 
 #define PDU_ADC_COMPARE_CMD          0xA0U
@@ -186,7 +187,7 @@ static uint8_t pdu_i2c_scan_found = 0U;
 static uint8_t pdu_i2c_scan_masks_last[PDU_I2C_SCAN_FRAME_COUNT];
 static uint8_t pdu_i2c_scan_found_last = 0xFFU;
 static uint8_t pdu_i2c_scan_report_div = 0U;
-static uint8_t pdu_i2c_scan_div = 0U;
+static uint8_t pdu_i2c_scan_div = 10U;
 static uint8_t pdu_comm_fail_streak = 0U;
 static volatile uint8_t pdu_debug_ttl_polls = 0U;
 static float pdu_vin_history[PDU_VIN_AVG_SAMPLES] = { 0.0f };
@@ -2222,6 +2223,24 @@ static bool pdu_can_send_error_detail_frame(uint8_t slot)
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
 
+static bool pdu_i2c_scan_addr_present(uint8_t addr)
+{
+    uint8_t offset;
+    uint8_t frame;
+    uint8_t bit;
+
+    if ((addr < PDU_I2C_SCAN_START_ADDR) || (addr > PDU_I2C_SCAN_END_ADDR))
+    {
+        return false;
+    }
+
+    offset = (uint8_t)(addr - PDU_I2C_SCAN_START_ADDR);
+    frame = (uint8_t)(offset / 8U);
+    bit = (uint8_t)(offset % 8U);
+
+    return (pdu_i2c_scan_masks[frame] & (uint8_t)(1U << bit)) != 0U;
+}
+
 static void pdu_i2c_scan_update(void)
 {
     uint8_t found_addrs[128];
@@ -2264,6 +2283,14 @@ static void pdu_i2c_scan_update(void)
             uint8_t frame = (uint8_t)(offset / 8U);
             uint8_t bit = (uint8_t)(offset % 8U);
             pdu_i2c_scan_masks[frame] |= (uint8_t)(1U << bit);
+        }
+    }
+
+    for (i = 0U; i < PDU_NUM_EFUSES; i++)
+    {
+        if (!pdu_i2c_scan_addr_present(tps_addr[i]))
+        {
+            pdu_error_details_upsert(PDU_ERR_CODE_SCAN_ADDR_MISS, i, tps_addr[i]);
         }
     }
 }
