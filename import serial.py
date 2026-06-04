@@ -42,7 +42,7 @@ CAN_ID_MCU = 0x740
 CAN_ID_ERR_DETAIL_BASE = 0x750
 CAN_ID_ERR_DETAIL_LAST = CAN_ID_ERR_DETAIL_BASE + 7
 CAN_ID_I2C_SCAN_BASE = 0x760
-CAN_ID_I2C_SCAN_LAST = CAN_ID_I2C_SCAN_BASE + 3
+CAN_ID_I2C_SCAN_LAST = CAN_ID_I2C_SCAN_BASE + 15
 CAN_ID_PMBUS_DBG_META = 0x770
 CAN_ID_PMBUS_DBG_DATA = 0x771
 CAN_ID_PMBUS_DBG_EXT = 0x772
@@ -54,6 +54,8 @@ CONTROL_OP_OUTPUT = 0x01
 CONTROL_OP_RETRY_MODE = 0x02
 CONTROL_OP_CLEAR_FAULTS = 0x03
 CONTROL_OP_ADC_REF = 0x04
+CONTROL_OP_HYBRID_ONLY = 0x05
+CONTROL_OP_I2C_SCAN_MODE = 0x06
 CONTROL_OP_NOP = 0x00
 CONTROL_FLAG_DEBUG = 0x04
 OVERRIDE_FLAG_ARMED = 0x01
@@ -70,6 +72,8 @@ ECU_RAW_FLAG_SEEN = 0x01
 ECU_RAW_FLAG_FRESH = 0x02
 ECU_RAW_FLAG_BYTE1 = 0x04
 ECU_RAW_FLAG_DLC_OK = 0x08
+I2C_SCAN_FLAG_HYBRID_ONLY = 0x01
+I2C_SCAN_FLAG_FULL_RANGE = 0x02
 
 EFUSE_NAMES = [
     "Hybrid",
@@ -295,12 +299,20 @@ def get_i2c_scan_summary(scan_blocks):
 
     first_slot = sorted(scan_blocks.keys())[0]
     first_block = scan_blocks[first_slot]
-    addresses = get_i2c_scan_addresses(scan_blocks)
+    frame_count = max(1, int(first_block.get("frame_count", len(scan_blocks))))
+    active_blocks = {
+        slot: block
+        for slot, block in scan_blocks.items()
+        if slot < frame_count
+    }
+    addresses = get_i2c_scan_addresses(active_blocks)
 
     return {
         "start": int(first_block.get("start", 0x40)),
         "end": int(first_block.get("end", 0x59)),
         "found": int(first_block.get("found", len(addresses))),
+        "frame_count": frame_count,
+        "flags": int(first_block.get("flags", 0)),
         "addresses": addresses,
     }
 
@@ -556,6 +568,8 @@ def decode_can_frame(frame):
                 "found": data[3],
                 "start": data[4],
                 "end": data[5],
+                "frame_count": data[6] if len(data) >= 7 else 1,
+                "flags": data[7] if len(data) >= 8 else 0,
             }
 
         elif can_id == CAN_ID_PMBUS_DBG_META:
@@ -809,6 +823,8 @@ class PDUDashboard:
         self.last_pmbus_trace_render = ()
         self.manual_override_mask = 0
         self.manual_override_start_enabled = True
+        self.hybrid_only_mode_var = tk.BooleanVar(value=False)
+        self.full_i2c_scan_var = tk.BooleanVar(value=False)
         self.latest_control_state_flags = 0
         self.latest_requested_output_mask = 0
         self.latest_applied_output_mask = 0
@@ -1170,6 +1186,18 @@ class PDUDashboard:
         self.last_debug_keepalive = 0.0
         self.send_dashboard_frame(debug=self.debug_enabled_var.get())
 
+    def on_hybrid_only_mode_toggled(self):
+        self.send_dashboard_frame(
+            opcode=CONTROL_OP_HYBRID_ONLY,
+            param0=1 if self.hybrid_only_mode_var.get() else 0,
+        )
+
+    def on_full_i2c_scan_toggled(self):
+        self.send_dashboard_frame(
+            opcode=CONTROL_OP_I2C_SCAN_MODE,
+            param0=1 if self.full_i2c_scan_var.get() else 0,
+        )
+
     def build_diagnostics_window(self):
         self.diag_window = tk.Toplevel(self.root)
         self.diag_window.title("PDU Diagnostics")
@@ -1300,6 +1328,30 @@ class PDUDashboard:
             bg="gold",
         )
         self.i2c_hybrid_status_label.pack(fill="x", padx=4, pady=(2, 4))
+
+        debug_mode_frame = tk.LabelFrame(mcu_frame, text="Debug PMBus / I2C Modes")
+        debug_mode_frame.pack(fill="x", padx=4, pady=4)
+
+        tk.Checkbutton(
+            debug_mode_frame,
+            text="Hybrid eFuse only mode (PMBus only to 0x45)",
+            variable=self.hybrid_only_mode_var,
+            command=self.on_hybrid_only_mode_toggled,
+        ).pack(anchor="w", padx=4, pady=2)
+
+        tk.Checkbutton(
+            debug_mode_frame,
+            text="Full I2C scan range (0x08-0x77)",
+            variable=self.full_i2c_scan_var,
+            command=self.on_full_i2c_scan_toggled,
+        ).pack(anchor="w", padx=4, pady=2)
+
+        self.i2c_mode_status_label = tk.Label(
+            debug_mode_frame,
+            text="PMBus mode: waiting for scan status",
+            anchor="w",
+        )
+        self.i2c_mode_status_label.pack(fill="x", padx=4, pady=(2, 0))
 
         error_list_frame = tk.LabelFrame(mcu_frame, text="Active Errors (1s TTL)")
         error_list_frame.pack(fill="x", padx=4, pady=4)
@@ -1613,10 +1665,23 @@ class PDUDashboard:
         if i2c_summary is None:
             self.i2c_scan_status_label.config(text="I2C scan: waiting for 0x760-0x763")
             self.i2c_hybrid_status_label.config(text="Hybrid eFuse 0x45: waiting for scan", bg="gold")
+            self.i2c_mode_status_label.config(text="PMBus mode: waiting for scan status")
         else:
             address_text = " ".join(f"0x{addr:02X}" for addr in i2c_summary["addresses"])
             if not address_text:
                 address_text = "none"
+
+            scan_flags = i2c_summary.get("flags", 0)
+            hybrid_only_active = (scan_flags & I2C_SCAN_FLAG_HYBRID_ONLY) != 0
+            full_scan_active = (scan_flags & I2C_SCAN_FLAG_FULL_RANGE) != 0
+            self.hybrid_only_mode_var.set(hybrid_only_active)
+            self.full_i2c_scan_var.set(full_scan_active)
+            self.i2c_mode_status_label.config(
+                text=(
+                    f"PMBus mode: {'Hybrid only (0x45 only)' if hybrid_only_active else 'Normal all-eFuse'}  "
+                    f"Scan mode: {'Full 0x08-0x77' if full_scan_active else 'eFuse range only'}"
+                )
+            )
 
             self.i2c_scan_status_label.config(
                 text=(
