@@ -39,10 +39,55 @@
 /* Runtime configuration values used by this firmware. */
 #define TPS25990_MFR_WRITE_PROTECT_LOCK    0x00U
 #define TPS25990_MFR_WRITE_PROTECT_UNLOCK  0xA2U
+#define TPS25990_DEVICE_CONFIG_OC_BLANK_MASK   (3U << 9)
+#define TPS25990_DEVICE_CONFIG_OC_BLANK_K_1P5  (3U << 9)
 #define TPS25990_DEVICE_CONFIG_SC_RETRY    (1U << 13)
+#define TPS25990_RETRY_CONFIG_RESPONSE_MASK          (3U << 6)
+#define TPS25990_RETRY_CONFIG_RESPONSE_SHUTDOWN_RETRY (2U << 6)
+#define TPS25990_RETRY_CONFIG_COUNT_MASK            (7U << 3)
+#define TPS25990_RETRY_CONFIG_COUNT_INDEFINITE      (7U << 3)
+#define TPS25990_RETRY_CONFIG_DELAY_MASK            0x07U
+#define TPS25990_RETRY_CONFIG_DELAY_55MS            0x00U
 #define TPS25990_RETRY_CONFIG_DEFAULT      0x84U
 #define TPS25990_RETRY_CONFIG_RACE_MODE    0x9BU
 #define TPS25990_RETRY_CONFIG_TEST_MODE    0x96U
+
+/* OC_TIMER (0xE6) – overcurrent blanking interval, bits [7:0] */
+#define TPS25990_CMD_OC_TIMER           0xE6U
+#define TPS25990_OC_TIMER_MAX_VALUE     0x77U
+
+/* VIREF (0xE0) – internal reference voltage, bits [7:0] */
+#define TPS25990_CMD_VIREF             0xE0U
+#define TPS25990_VIREF_1V186_VALUE     0x3FU
+
+/* PMBus threshold / warning commands used for TPS25990 */
+#define TPS25990_CMD_VIN_UV_WARN        0x58U
+#define TPS25990_CMD_VIN_UV_FLT         0x59U
+#define TPS25990_CMD_OT_WARN            0x51U
+
+/* PK_MIN_AVG (0xEA) – peak/min/average configuration */
+#define TPS25990_CMD_PK_MIN_AVG         0xEAU
+#define TPS25990_PK_MIN_AVG_AVG_CNT_MASK  0x07U
+#define TPS25990_PK_MIN_AVG_AVG_CNT_128 0x07U
+
+/* STATUS_TEMP (0x7D) bit definitions */
+#define TPS25990_STATUS_TEMP_OT_FLT     (1U << 7)
+#define TPS25990_STATUS_TEMP_OT_WARN    (1U << 6)
+
+/* DIRECT-format pre‑computed threshold values */
+/* VIN_UV_WARN at 9 V: m=13128 b=0 R=-3 => Y = (13128*9+0)/1000 ≈ 118 = 0x0076 */
+#define TPS25990_VIN_UV_WARN_9V_VALUE   0x0076U
+/* VIN_UV_FLT minimum (0 V): Y = 0 */
+#define TPS25990_VIN_UV_FLT_MIN_VALUE   0x0000U
+/* OT_WARN at 85 °C: m=35 b=8006 R=-2 => Y = (35*85+8006)/100 ≈ 110 = 0x006E */
+#define TPS25990_OT_WARN_85C_VALUE      0x006EU
+
+/* DEVICE_CONFIG (0xE4) bit‑field helpers */
+#define TPS25990_DEVICE_CONFIG_SPFAIL_MASK    (3U << 11)
+#define TPS25990_DEVICE_CONFIG_SPFAIL_225     (3U << 11)
+#define TPS25990_DEVICE_CONFIG_DVDT_MASK      (3U << 9)
+#define TPS25990_DEVICE_CONFIG_DVDT_SHIFT     9U
+#define TPS25990_DEVICE_CONFIG_ADC_HI_PERF    (1U << 3)
 
 /*============================================================================
  * STATUS_WORD Bit Definitions (0x79)
@@ -112,17 +157,16 @@
 #define TPS25990_STEMP_RESERVED_0   (1U << 0)   /* Reserved */
 
 /*============================================================================
- * STATUS_IN Bit Definitions (0x7C) - Input Status
+ * STATUS_IN Bit Definitions (0x7C) - Input Status (TPS25990 specific)
  *===========================================================================*/
 
 #define TPS25990_SIN_VIN_OV_FLT     (1U << 7)   /* VIN overvoltage fault */
 #define TPS25990_SIN_VIN_OV_WARN    (1U << 6)   /* VIN overvoltage warning */
 #define TPS25990_SIN_VIN_UV_WARN    (1U << 5)   /* VIN undervoltage warning */
-#define TPS25990_SIN_OC_FLT         (1U << 4)   /* Input overcurrent fault (circuit breaker) */
-#define TPS25990_SIN_VIN_UV_FLT     (1U << 3)   /* VIN undervoltage fault */
-#define TPS25990_SIN_RESERVED_2     (1U << 2)   /* Reserved */
-#define TPS25990_SIN_RESERVED_1     (1U << 1)   /* Reserved */
-#define TPS25990_SIN_RESERVED_0     (1U << 0)   /* Reserved */
+#define TPS25990_SIN_VIN_UV_FLT     (1U << 4)   /* VIN undervoltage fault */
+#define TPS25990_SIN_OC_FLT         (1U << 2)   /* Overcurrent fault (inrush & steady-state) */
+#define TPS25990_SIN_OC_WARN        (1U << 1)   /* Overcurrent warning */
+#define TPS25990_SIN_IN_OP_WARN     (1U << 0)   /* Overpower warning */
 
 /*============================================================================
  * STATUS_CML Bit Definitions (0x7E) - Communication/Logic Fault
@@ -138,17 +182,38 @@
 #define TPS25990_SCML_RESERVED_0    (1U << 0)   /* Reserved */
 
 /*============================================================================
- * STATUS_MFR_SPECIFIC Bit Definitions (0x80)
+ * STATUS_MFR_SPECIFIC Bit Definitions (0x80) – TPS25990 specific
  *===========================================================================*/
 
 #define TPS25990_SMFR_SHORT_FLT     (1U << 7)   /* Short circuit fault */
 #define TPS25990_SMFR_HOTSWAP       (1U << 6)   /* Hotswap event */
 #define TPS25990_SMFR_FET_HEALTH    (1U << 5)   /* FET health monitor fault */
 #define TPS25990_SMFR_RESERVED_4    (1U << 4)   /* Reserved */
-#define TPS25990_SMFR_RESERVED_3    (1U << 3)   /* Reserved */
-#define TPS25990_SMFR_RESERVED_2    (1U << 2)   /* Reserved */
+#define TPS25990_SMFR_SOA_FLT       (1U << 3)   /* FET SOA limit violation */
+#define TPS25990_SMFR_EXT_FLT       (1U << 2)   /* External fault (SWEN pulled low) */
 #define TPS25990_SMFR_RESERVED_1    (1U << 1)   /* Reserved */
 #define TPS25990_SMFR_RESERVED_0    (1U << 0)   /* Reserved */
+
+/*============================================================================
+ * STATUS_MFR_SPECIFIC_2 Bit Definitions (0xF3, Read Word) – TPS25990 specific
+ *===========================================================================*/
+
+#define TPS25990_SMFR2_PGOODB          (1U << 13)  /* PGOOD pin status (0=good) */
+#define TPS25990_SMFR2_SPFAIL          (1U << 12)  /* Single point failure (ILIM/IMON/IREF) */
+#define TPS25990_SMFR2_SC_FLT          (1U << 11)  /* Short-circuit fault threshold crossed */
+#define TPS25990_SMFR2_OC_DET          (1U << 10)  /* Overcurrent detected (inrush & steady-state) */
+#define TPS25990_SMFR2_EIN_OF_WARN     (1U << 9)   /* EIN register overflow */
+#define TPS25990_SMFR2_VIN_TRAN        (1U << 8)   /* VIN transient detected */
+#define TPS25990_SMFR2_RETRY_REC       (1U << 3)   /* Fault recovery/retry status */
+#define TPS25990_SMFR2_POWER_CYCLE_REC (1U << 2)   /* Power Cycle command recovery */
+#define TPS25990_SMFR2_INIT_DONE       (1U << 1)   /* Register initialization complete */
+#define TPS25990_SMFR2_CONFIG_NVM_STAT (1U << 0)   /* Configuration NVM available */
+
+/*============================================================================
+ * STATUS_OUT Bit Definitions (0x7A, Read Byte) – TPS25990 specific
+ *===========================================================================*/
+
+#define TPS25990_SOUT_VOUT_UV_WARN  (1U << 5)   /* VOUT undervoltage warning */
 
 /*============================================================================
  * Decoded Status Structures
@@ -189,14 +254,16 @@ typedef struct {
 } tps25990_status_temp_t;
 
 /**
- * @brief Decoded STATUS_IN (input) fields
+ * @brief Decoded STATUS_IN (input) fields – TPS25990 specific
  */
 typedef struct {
     bool vin_ov_fault;  /**< VIN overvoltage fault */
     bool vin_ov_warn;   /**< VIN overvoltage warning */
     bool vin_uv_warn;   /**< VIN undervoltage warning */
-    bool oc_fault;      /**< Input overcurrent fault (circuit breaker) */
     bool vin_uv_fault;  /**< VIN undervoltage fault */
+    bool oc_fault;      /**< Overcurrent fault (inrush & steady-state) */
+    bool oc_warn;       /**< Overcurrent warning */
+    bool in_op_warn;    /**< Overpower warning */
 } tps25990_status_in_t;
 
 /**
@@ -212,13 +279,38 @@ typedef struct {
 } tps25990_status_cml_t;
 
 /**
- * @brief Decoded STATUS_MFR_SPECIFIC fields
+ * @brief Decoded STATUS_MFR_SPECIFIC fields – TPS25990 specific
  */
 typedef struct {
     bool short_fault;   /**< Short circuit fault */
     bool hotswap;       /**< Hotswap event */
     bool fet_health;    /**< FET health monitor fault */
+    bool soa_flt;       /**< FET SOA limit violation */
+    bool ext_flt;       /**< External fault (SWEN pulled low) */
 } tps25990_status_mfr_t;
+
+/**
+ * @brief Decoded STATUS_MFR_SPECIFIC_2 fields (0xF3, Read Word)
+ */
+typedef struct {
+    bool pgoodb;            /**< PGOOD pin status (0=good) */
+    bool spfail;            /**< Single point failure (ILIM/IMON/IREF) */
+    bool sc_flt;            /**< Short-circuit fault threshold crossed */
+    bool oc_det;            /**< Overcurrent detected (inrush & steady-state) */
+    bool ein_of_warn;       /**< EIN register overflow */
+    bool vin_tran;          /**< VIN transient detected */
+    bool retry_rec;         /**< Fault recovery/retry status */
+    bool power_cycle_rec;   /**< Power Cycle command recovery */
+    bool init_done;         /**< Register initialization complete */
+    bool config_nvm_stat;   /**< Configuration NVM available */
+} tps25990_status_mfr2_t;
+
+/**
+ * @brief Decoded STATUS_OUT fields (0x7A, Read Byte)
+ */
+typedef struct {
+    bool vout_uv_warn;  /**< VOUT undervoltage warning */
+} tps25990_status_out_t;
 
 /**
  * @brief Complete decoded STATUS_WORD with high byte flags
@@ -266,12 +358,15 @@ typedef struct {
  * @brief Complete TPS25990 status structure with all decoded registers
  */
 typedef struct {
-    tps25990_status_word_t word;    /**< Decoded STATUS_WORD */
-    tps25990_status_iout_t iout;    /**< Decoded STATUS_IOUT */
-    tps25990_status_temp_t temp;    /**< Decoded STATUS_TEMP */
-    tps25990_status_in_t input;     /**< Decoded STATUS_IN */
-    tps25990_status_cml_t cml;      /**< Decoded STATUS_CML */
-    tps25990_status_mfr_t mfr;      /**< Decoded STATUS_MFR_SPECIFIC */
+    tps25990_status_word_t word;        /**< Decoded STATUS_WORD */
+    tps25990_status_iout_t iout;        /**< Decoded STATUS_IOUT */
+    tps25990_status_temp_t temp;        /**< Decoded STATUS_TEMP */
+    tps25990_status_in_t input;         /**< Decoded STATUS_IN */
+    tps25990_status_cml_t cml;          /**< Decoded STATUS_CML */
+    tps25990_status_mfr_t mfr;          /**< Decoded STATUS_MFR_SPECIFIC */
+    tps25990_status_mfr2_t mfr2;        /**< Decoded STATUS_MFR_SPECIFIC_2 */
+    tps25990_status_out_t status_out;   /**< Decoded STATUS_OUT */
+    uint16_t raw_mfr2;                  /**< Raw STATUS_MFR_SPECIFIC_2 value */
 } tps25990_full_status_t;
 
 /*============================================================================
@@ -351,5 +446,18 @@ bool tps25990_read_device_config(uint8_t addr, uint16_t *out);
 bool tps25990_write_device_config(uint8_t addr, uint16_t value);
 bool tps25990_read_retry_config(uint8_t addr, uint8_t *out);
 bool tps25990_write_retry_config(uint8_t addr, uint8_t value);
+bool tps25990_read_oc_timer(uint8_t addr, uint8_t *out);
+bool tps25990_write_oc_timer(uint8_t addr, uint8_t value);
+bool tps25990_read_viref(uint8_t addr, uint8_t *out);
+bool tps25990_write_viref(uint8_t addr, uint8_t value);
+bool tps25990_read_vin_uv_flt(uint8_t addr, uint16_t *out);
+bool tps25990_write_vin_uv_flt(uint8_t addr, uint16_t value);
+bool tps25990_read_vin_uv_warn(uint8_t addr, uint16_t *out);
+bool tps25990_write_vin_uv_warn(uint8_t addr, uint16_t value);
+bool tps25990_read_ot_warn(uint8_t addr, uint16_t *out);
+bool tps25990_write_ot_warn(uint8_t addr, uint16_t value);
+bool tps25990_read_status_temp(uint8_t addr, uint8_t *out);
+bool tps25990_read_pk_min_avg(uint8_t addr, uint8_t *out);
+bool tps25990_write_pk_min_avg(uint8_t addr, uint8_t value);
 
 #endif /* TPS25990_H */

@@ -13,6 +13,7 @@
 
 /* Aggregated control/telemetry IDs */
 #define PDU_CAN_ID_CONTROL_MASK     0x080U
+#define PDU_CAN_ID_INPUT8_STATUS    0x085U
 #define PDU_CAN_ID_CONTROL          0x200U
 #define PDU_CAN_ID_TELEM_SUMMARY    0x700U
 #define PDU_CAN_ID_TELEM_EXTRA      0x701U
@@ -30,6 +31,10 @@
 #define PDU_CAN_ID_PMBUS_DBG_EXT    0x772U
 #define PDU_CAN_ID_RETRY_MODE_STAT  0x790U
 #define PDU_CAN_ID_ADC_REF_STAT     0x791U
+#define PDU_CAN_ID_REG_VERIFY_STAT  0x796U
+#define PDU_CAN_ID_PMBUS_STATS      0x793U
+#define PDU_CAN_ID_EFUSE_STATUS_BASE  0x780U  /* 0x780-0x787 extended status */
+#define PDU_CAN_ID_EFUSE_MFR2_BASE    0x788U  /* 0x788-0x78F MFR2 status */
 #define PDU_ECU_RAW_FLAG_SEEN       (1U << 0)
 #define PDU_ECU_RAW_FLAG_FRESH      (1U << 1)
 #define PDU_ECU_RAW_FLAG_BYTE1      (1U << 2)
@@ -83,7 +88,7 @@
 #define PDU_OVERRIDE_FLAG_ARMED      (1U << 0)
 #define PDU_OVERRIDE_FLAG_START_ON   (1U << 1)
 #define PDU_CONTROL_FLAG_DEBUG       (1U << 2)
-#define PDU_CONTROL_SOURCE_TIMEOUT_MS 2000U
+#define PDU_CONTROL_SOURCE_TIMEOUT_MS 500U
 #define PDU_CONTROL_STATE_DEBUG_ACTIVE     (1U << 0)
 #define PDU_CONTROL_STATE_ECU_FRESH        (1U << 1)
 #define PDU_CONTROL_STATE_OVERRIDE_FRESH   (1U << 2)
@@ -102,12 +107,16 @@
 #define PDU_ADC_MISMATCH_RATIO       0.25f
 
 #define PDU_SUM_CURRENT_OVERCURRENT_A   60.0f
-#define PDU_HYBRID_CUTOFF_CURRENT_A     4.0f
-#define PDU_HYBRID_CUTOFF_VIN_V         10.0f
 #define PDU_VIN_AVG_SAMPLES             4U
+#define PDU_DEFAULT_DVDT_CONFIG         0U          /* 00 = 50 % current scaling */
 #define PDU_DEBUG_TTL_POLLS             10U
 #define PDU_ERRFLAG_OVERCURRENT         (1U << 0)
 #define PDU_ERRFLAG_BAD_VOLTAGE         (1U << 1)
+
+/* Bitmask of eFuse channels that are physically present on the I²C bus.
+ * Set a bit to 0 to disable all PMBus traffic to that channel (avoids
+ * CML faults from a missing/dead device poisoning the shared bus). */
+#define PDU_ENABLED_EFUSE_MASK          0xFFU
 
 #define PDU_VIN_UV_CLEAR_POLLS       10U
 #define PDU_FET_OFF_REENABLE_POLLS   5U
@@ -134,6 +143,27 @@
 #define PDU_RETRY_MODE_FAST_SC      1U
 #define PDU_RETRY_MODE_RACE         2U
 #define PDU_RETRY_MODE_TEST         3U
+
+#define PDU_EFUSE_CH_HYBRID         0U
+#define PDU_EFUSE_CH_VENT1          1U
+#define PDU_EFUSE_CH_VENT2          2U
+
+#define PDU_EFUSE_CH_FUEL          4U  /* Fuel Pump — also behind relay */
+
+#define PDU_INPUT8_CAN_ASSERTED_VALUE 0xFFU
+#define PDU_INPUT8_CAN_DEASSERTED_VALUE 0x00U
+
+/* ── Relay-powered eFuse detection ──
+ * Channels 3 (IGN/INJ) and 4 (Fuel Pump) are behind relays and may not
+ * receive power until the ECU activates the relay.  Before any register
+ * writes, the firmware must verify the eFuse is powered by checking for
+ * an I2C ACK at its address.  This is done at 100 Hz in the control loop.
+ */
+#define PDU_RELAY_EFUSE_MASK        ((1U << 3U) | (1U << 4U))
+
+static bool pdu_efuse_powered[PDU_NUM_EFUSES];
+static bool pdu_efuse_init_done[PDU_NUM_EFUSES];
+static bool pdu_init_pending = false;
 
 /* TPS25990 PMBus I2C addresses for each eFuse channel */
 static const uint8_t tps_addr[PDU_NUM_EFUSES] =
@@ -162,14 +192,14 @@ static const pdu_adc_channel_t pdu_adc_channels[PDU_NUM_EFUSES] =
 
 static const float pdu_r_imon_ohms[PDU_NUM_EFUSES] =
 {
-    3300.0f,
-    3300.0f,
-    3300.0f,
-    3300.0f,
-    4700.0f,
-    4700.0f,
-    4700.0f,
-    4700.0f
+    3300.0f,  /* Hybrid  */
+    3300.0f,  /* Vent1   */
+    3300.0f,  /* Vent2   */
+    3300.0f,  /* IGN     */
+    3300.0f,  /* Fuel    */
+    4700.0f,  /* WP1     */
+    4700.0f,  /* WP2     */
+    3300.0f   /* 12V     */
 };
 
 static uint8_t can1_msg_ram[CAN1_MESSAGE_RAM_CONFIG_SIZE] __attribute__((aligned(4)));
@@ -209,7 +239,6 @@ static volatile uint8_t pdu_debug_ttl_polls = 0U;
 static float pdu_vin_history[PDU_VIN_AVG_SAMPLES] = { 0.0f };
 static uint8_t pdu_vin_history_count = 0U;
 static uint8_t pdu_vin_history_index = 0U;
-static bool pdu_hybrid_cutoff_latched = false;
 static bool pdu_desired_efuse_enabled[PDU_NUM_EFUSES] = { false, false, false, false, false, false, false, false };
 static bool pdu_desired_other_fused_enabled = true;
 static uint8_t pdu_requested_output_mask = 0U;
@@ -235,6 +264,7 @@ static uint8_t pdu_active_retry_mode = 0U;
 static uint8_t pdu_desired_adc_reference = PDU_ADC_REF_EXTERNAL;
 static uint8_t pdu_active_adc_reference = PDU_ADC_REF_EXTERNAL;
 static bool pdu_adc_reference_applied = false;
+static uint8_t pdu_desired_dvdt_config = PDU_DEFAULT_DVDT_CONFIG;
 static uint16_t pdu_fault_persist_polls[PDU_NUM_EFUSES] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 static uint16_t pdu_vin_uv_polls[PDU_NUM_EFUSES] = { 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 static bool pdu_vin_uv_clear_attempted[PDU_NUM_EFUSES] = { false, false, false, false, false, false, false, false };
@@ -245,6 +275,14 @@ static bool pdu_applied_efuse_enabled[PDU_NUM_EFUSES] = { false, false, false, f
 static bool pdu_applied_other_fused_valid = false;
 static bool pdu_applied_other_fused_enabled = false;
 static bool pdu_retry_mode_applied = false;
+static uint8_t pdu_reg_verify_ok_mask = 0U;
+static uint8_t pdu_reg_verify_fail_mask = 0U;
+static volatile uint32_t pdu_pmbus_sweep_count = 0U;
+static volatile uint32_t pdu_pmbus_sweep_start_ms = 0U;
+static volatile uint16_t pdu_pmbus_sweeps_per_sec = 0U;
+static volatile uint16_t pdu_pmbus_sweep_last_ms = 0U;
+static volatile uint16_t pdu_pmbus_sweep_errors = 0U;
+static volatile uint8_t pdu_pmbus_stats_div = 0U;
 static volatile uint8_t pdu_safety_input_bits = 0U;
 static volatile bool pdu_safety_input_changed = false;
 static volatile bool pdu_safety_refresh_pending = false;
@@ -272,7 +310,6 @@ static bool pdu_status_fet_off(uint16_t status);
 static bool pdu_rearm_enabled_efuse(uint8_t channel);
 static void pdu_set_efuse_gpio(uint8_t channel, bool enabled);
 static void pdu_force_safety_outputs_gpio_off(void);
-static void pdu_force_start_output_on(void);
 static bool pdu_apply_other_fused_state(void);
 static void pdu_invalidate_safety_output_cache(void);
 static void pdu_service_safety_inputs(void);
@@ -297,6 +334,9 @@ static bool pdu_can_send_ecu_raw_debug_frame(uint8_t flags, uint8_t decoded_mask
 static bool pdu_pmbus_channel_allowed(uint8_t channel);
 static void pdu_update_i2c_scan_range(void);
 static uint8_t pdu_get_i2c_scan_flags(void);
+static uint16_t pdu_get_target_device_config(uint8_t channel, uint16_t current_device_config);
+static uint8_t  pdu_get_target_retry_config(uint8_t channel);
+static void pdu_service_relay_channels(void);
 
 static void pdu_reset_fault_recovery_state(uint8_t channel)
 {
@@ -325,6 +365,159 @@ static bool pdu_clear_efuse_fault(uint8_t channel)
     }
 
     return tps25990_clear_faults(tps_addr[channel]);
+}
+
+/* ── Quick I2C address ping — returns true if device ACKs ── */
+static bool pdu_i2c_ping(uint8_t addr)
+{
+    uint32_t timeout = 100000UL;
+
+    while (SERCOM1_I2C_IsBusy())
+    {
+        if (timeout == 0UL)
+        {
+            SERCOM1_I2C_TransferAbort();
+            return false;
+        }
+        timeout--;
+    }
+
+    if (!SERCOM1_I2C_Write(addr, NULL, 0U))
+    {
+        return false;
+    }
+
+    timeout = 100000UL;
+    while (SERCOM1_I2C_IsBusy())
+    {
+        if (timeout == 0UL)
+        {
+            SERCOM1_I2C_TransferAbort();
+            return false;
+        }
+        timeout--;
+    }
+
+    return (SERCOM1_I2C_ErrorGet() == SERCOM_I2C_ERROR_NONE);
+}
+
+/* ── Single-eFuse init: unlock, write all protected registers, lock, verify ── */
+static bool pdu_init_single_efuse(uint8_t channel)
+{
+    uint16_t device_config;
+    uint16_t target_device_config;
+    uint8_t  retry_config;
+    uint16_t verify_device_config;
+    uint8_t  verify_retry_config;
+
+    if (channel >= PDU_NUM_EFUSES)
+    {
+        return false;
+    }
+
+    if (!pdu_pmbus_channel_allowed(channel))
+    {
+        return true;
+    }
+
+    if (!tps25990_unlock_writes(tps_addr[channel]))
+    {
+        pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+        return false;
+    }
+
+    if (!tps25990_read_device_config(tps_addr[channel], &device_config))
+    {
+        (void)tps25990_lock_writes(tps_addr[channel]);
+        pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+        return false;
+    }
+
+    target_device_config = pdu_get_target_device_config(channel, device_config);
+    retry_config = pdu_get_target_retry_config(channel);
+
+    if (!tps25990_write_device_config(tps_addr[channel], target_device_config))   { goto fail; }
+    if (!tps25990_write_retry_config(tps_addr[channel], retry_config))            { goto fail; }
+    if (!tps25990_write_oc_timer(tps_addr[channel], TPS25990_OC_TIMER_MAX_VALUE)) { goto fail; }
+    if (!tps25990_write_viref(tps_addr[channel], TPS25990_VIREF_1V186_VALUE))    { goto fail; }
+    if (!tps25990_write_vin_uv_flt(tps_addr[channel], TPS25990_VIN_UV_FLT_MIN_VALUE)) { goto fail; }
+    if (!tps25990_write_vin_uv_warn(tps_addr[channel], TPS25990_VIN_UV_WARN_9V_VALUE)) { goto fail; }
+    if (!tps25990_write_ot_warn(tps_addr[channel], TPS25990_OT_WARN_85C_VALUE))  { goto fail; }
+    if (!tps25990_write_pk_min_avg(tps_addr[channel], TPS25990_PK_MIN_AVG_AVG_CNT_128)) { goto fail; }
+
+    if (!tps25990_lock_writes(tps_addr[channel]))
+    {
+        pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+        return false;
+    }
+
+    (void)tps25990_clear_faults(tps_addr[channel]);
+    SYSTICK_DelayMs(1U);
+
+    /* readback verification */
+    if (!tps25990_read_device_config(tps_addr[channel], &verify_device_config))   { pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel); return false; }
+    if (!tps25990_read_retry_config(tps_addr[channel], &verify_retry_config))     { pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel); return false; }
+
+    if ((verify_device_config != target_device_config) ||
+        (verify_retry_config != retry_config))
+    {
+        pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+        return false;
+    }
+
+    pdu_reg_verify_ok_mask |= (uint8_t)(1U << channel);
+    pdu_efuse_init_done[channel] = true;
+    return true;
+
+fail:
+    (void)tps25990_lock_writes(tps_addr[channel]);
+    pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+    return false;
+}
+
+/* ── Service relay-powered channels: detect power-up, init on first response ── */
+static void pdu_service_relay_channels(void)
+{
+    uint8_t ch;
+
+    for (ch = 0U; ch < PDU_NUM_EFUSES; ch++)
+    {
+        /* Only service relay channels that haven't been initialised yet */
+        if (((PDU_RELAY_EFUSE_MASK >> ch) & 1U) == 0U)
+        {
+            continue;
+        }
+        if (!pdu_pmbus_channel_allowed(ch))
+        {
+            continue;
+        }
+        if (pdu_efuse_powered[ch] && pdu_efuse_init_done[ch])
+        {
+            continue;
+        }
+
+        /* Quick I2C ping — if the eFuse is powered, it will ACK */
+        if (pdu_i2c_ping(tps_addr[ch]))
+        {
+            pdu_efuse_powered[ch] = true;
+            if (!pdu_efuse_init_done[ch])
+            {
+                if (pdu_init_single_efuse(ch))
+                {
+                    /* Clear any CML faults accumulated during init */
+                    (void)tps25990_clear_faults(tps_addr[ch]);
+                    /* Apply desired output state */
+                    (void)pdu_apply_efuse_state(ch, true);
+                    pdu_init_pending = true;
+                }
+            }
+        }
+        else
+        {
+            /* Not powered yet — will retry next control cycle */
+            pdu_efuse_powered[ch] = false;
+        }
+    }
 }
 
 static bool pdu_clear_requested_faults(uint8_t target)
@@ -443,7 +636,7 @@ static void pdu_note_recovery_failure(uint8_t channel, uint8_t command)
 static void pdu_service_efuse_fault_recovery(uint8_t channel, uint16_t status)
 {
     bool fet_off;
-    bool vin_uv_present;
+    bool has_fault;
 
     if ((channel >= PDU_NUM_EFUSES) || (!pdu_desired_efuse_enabled[channel]))
     {
@@ -464,81 +657,63 @@ static void pdu_service_efuse_fault_recovery(uint8_t channel, uint16_t status)
     }
 
     fet_off = pdu_status_fet_off(status);
+    has_fault = pdu_status_has_fault(status);
 
-    if (fet_off && (pdu_fault_persist_polls[channel] >= PDU_FET_OFF_REENABLE_POLLS))
+    /* ── FET off with a fault: clear the latched fault immediately ── */
+    if (fet_off && has_fault)
     {
-        if (!pdu_apply_efuse_state(channel, true))
-        {
-            pdu_note_recovery_failure(channel, PMBUS_CMD_OPERATION);
-        }
-        return;
-    }
-
-    if (!pdu_status_has_fault(status))
-    {
-        if (fet_off)
-        {
-            if (pdu_fault_persist_polls[channel] < 0xFFFFU)
-            {
-                pdu_fault_persist_polls[channel]++;
-            }
-            return;
-        }
-
-        pdu_reset_fault_recovery_state(channel);
-        return;
-    }
-
-    if (pdu_fault_persist_polls[channel] < 0xFFFFU)
-    {
-        pdu_fault_persist_polls[channel]++;
-    }
-
-    vin_uv_present = (status & TPS25990_STATUS_BYTE_VIN_UV) != 0U;
-    if (vin_uv_present)
-    {
-        if (pdu_vin_uv_polls[channel] < 0xFFFFU)
-        {
-            pdu_vin_uv_polls[channel]++;
-        }
-
-        if ((pdu_vin_uv_polls[channel] >= PDU_VIN_UV_CLEAR_POLLS) && !pdu_vin_uv_clear_attempted[channel])
-        {
-            pdu_vin_uv_clear_attempted[channel] = true;
-            if (!pdu_clear_efuse_fault(channel))
-            {
-                pdu_note_recovery_failure(channel, PMBUS_CMD_CLEAR_FAULTS);
-            }
-        }
-    }
-    else
-    {
-        pdu_vin_uv_polls[channel] = 0U;
-        pdu_vin_uv_clear_attempted[channel] = false;
-    }
-
-    if ((pdu_fault_persist_polls[channel] >= PDU_FAULT_CLEAR_POLLS) && !pdu_fault_clear_attempted[channel])
-    {
-        pdu_fault_clear_attempted[channel] = true;
+        /* Clear all latched fault bits so hardware retry can fire */
         if (!pdu_clear_efuse_fault(channel))
         {
             pdu_note_recovery_failure(channel, PMBUS_CMD_CLEAR_FAULTS);
         }
+
+        /* Check if FET came back on after fault clear */
+        if (tps25990_is_fet_on(tps_addr[channel]))
+        {
+            /* Hardware retry succeeded — done */
+            pdu_reset_fault_recovery_state(channel);
+            return;
+        }
+
+        /* Still off — count polls and force re-enable after threshold */
+        if (pdu_fault_persist_polls[channel] < 0xFFFFU)
+        {
+            pdu_fault_persist_polls[channel]++;
+        }
+
+        if (pdu_fault_persist_polls[channel] >= PDU_FET_OFF_REENABLE_POLLS)
+        {
+            if (!pdu_apply_efuse_state(channel, true))
+            {
+                pdu_note_recovery_failure(channel, PMBUS_CMD_OPERATION);
+            }
+            pdu_fault_persist_polls[channel] = 0U;
+            pdu_power_cycle_attempted[channel] = false;
+        }
+        return;
     }
 
-    if ((pdu_fault_persist_polls[channel] >= PDU_POWER_CYCLE_POLLS) && !pdu_power_cycle_attempted[channel])
+    /* ── FET off but no fault flags (unexpected) ── */
+    if (fet_off)
     {
-        pdu_power_cycle_attempted[channel] = true;
-        if (!pdu_apply_efuse_state(channel, true))
+        if (pdu_fault_persist_polls[channel] < 0xFFFFU)
         {
-            pdu_note_recovery_failure(channel, PMBUS_CMD_OPERATION);
+            pdu_fault_persist_polls[channel]++;
         }
-        pdu_fault_persist_polls[channel] = 0U;
-        pdu_vin_uv_polls[channel] = 0U;
-        pdu_vin_uv_clear_attempted[channel] = false;
-        pdu_fault_clear_attempted[channel] = false;
-        pdu_power_cycle_attempted[channel] = true;
+
+        if (pdu_fault_persist_polls[channel] >= PDU_FET_OFF_REENABLE_POLLS)
+        {
+            if (!pdu_apply_efuse_state(channel, true))
+            {
+                pdu_note_recovery_failure(channel, PMBUS_CMD_OPERATION);
+            }
+        }
+        return;
     }
+
+    /* ── FET on, no fault — all clear ── */
+    pdu_reset_fault_recovery_state(channel);
 }
 
 void PDU_CAN_Init(void)
@@ -789,17 +964,15 @@ static void pdu_set_other_fused_gpio(bool enabled)
     }
 }
 
-static void pdu_force_start_output_on(void)
-{
-    pdu_desired_other_fused_enabled = true;
-    pdu_set_other_fused_gpio(true);
-    pdu_applied_other_fused_valid = true;
-    pdu_applied_other_fused_enabled = true;
-}
-
 static bool pdu_pmbus_channel_allowed(uint8_t channel)
 {
     if (channel >= PDU_NUM_EFUSES)
+    {
+        return false;
+    }
+
+    /* Skip channels excluded by the compile‑time enabled mask */
+    if (((uint8_t)(1U << channel) & PDU_ENABLED_EFUSE_MASK) == 0U)
     {
         return false;
     }
@@ -968,10 +1141,6 @@ static uint8_t pdu_get_control_state_flags(void)
     {
         flags |= PDU_CONTROL_STATE_SAFETY_BLOCKED;
     }
-    if (pdu_hybrid_cutoff_latched)
-    {
-        flags |= PDU_CONTROL_STATE_HYBRID_LATCHED;
-    }
     if (pdu_applied_other_fused_valid && pdu_applied_other_fused_enabled)
     {
         flags |= PDU_CONTROL_STATE_START_ON;
@@ -1006,7 +1175,7 @@ static uint8_t pdu_get_raw_ecu_debug_flags(void)
 
 static uint8_t pdu_get_resolved_output_mask(bool *start_enabled, uint8_t *control_source)
 {
-    uint8_t requested_mask = 0xFFU;
+    uint8_t requested_mask = 0x00U;
     uint8_t source = 0U;
     bool start_on = true;
 
@@ -1021,11 +1190,6 @@ static uint8_t pdu_get_resolved_output_mask(bool *start_enabled, uint8_t *contro
         source = 1U;
         requested_mask = pdu_ecu_output_mask;
         start_on = true;
-    }
-
-    if (pdu_hybrid_cutoff_latched)
-    {
-        requested_mask &= (uint8_t)(~(1U << 0U));
     }
 
     if (pdu_hybrid_only_mode)
@@ -1154,6 +1318,41 @@ static bool pdu_retry_mode_is_valid(uint8_t mode)
            (mode == PDU_RETRY_MODE_TEST);
 }
 
+static uint16_t pdu_get_target_device_config(uint8_t channel, uint16_t current_device_config)
+{
+    uint16_t target_device_config = current_device_config;
+
+    (void)channel;
+
+    /* SC_RETRY (bit 13) = 1 — retry after short‑circuit fault (fast‑trip) */
+    target_device_config |= TPS25990_DEVICE_CONFIG_SC_RETRY;
+
+    /* SPFAIL (bits 12:11) = 11 — 225 % scalable fast‑trip threshold */
+    target_device_config &= (uint16_t)(~TPS25990_DEVICE_CONFIG_SPFAIL_MASK);
+    target_device_config |= TPS25990_DEVICE_CONFIG_SPFAIL_225;
+
+    /* DVDT_CONFIG (bits 10:9) — user‑selectable, default 00 = 50 % */
+    target_device_config &= (uint16_t)(~TPS25990_DEVICE_CONFIG_DVDT_MASK);
+    target_device_config |= (uint16_t)((uint16_t)(pdu_desired_dvdt_config & 3U) << TPS25990_DEVICE_CONFIG_DVDT_SHIFT);
+
+    /* ADC_HI_PERF (bit 3) = 1 — high‑performance ADC mode */
+    target_device_config |= TPS25990_DEVICE_CONFIG_ADC_HI_PERF;
+
+    return target_device_config;
+}
+
+static uint8_t pdu_get_target_retry_config(uint8_t channel)
+{
+    (void)channel;
+
+    /* Global: RESPONSE=10 (shutdown‑and‑retry), RETRY_CNT=111 (infinite),
+     * RETRY_DLY=000 (55 ms).  Dashboard mode buttons are kept for
+     * backward compatibility but no longer change the register value. */
+    return (uint8_t)(TPS25990_RETRY_CONFIG_RESPONSE_SHUTDOWN_RETRY |
+                     TPS25990_RETRY_CONFIG_COUNT_INDEFINITE |
+                     TPS25990_RETRY_CONFIG_DELAY_55MS);
+}
+
 static uint8_t pdu_retry_mode_from_registers(uint16_t device_config, uint8_t retry_config)
 {
     if ((device_config & TPS25990_DEVICE_CONFIG_SC_RETRY) != 0U)
@@ -1179,54 +1378,63 @@ static bool pdu_apply_retry_mode(void)
     uint8_t channel;
     bool all_ok = true;
     uint8_t verified_mode = 0U;
+    bool verified_mode_set = false;
 
     pdu_retry_mode_applied = false;
     pdu_active_retry_mode = 0U;
+    pdu_reg_verify_ok_mask = 0U;
+    pdu_reg_verify_fail_mask = 0U;
 
     for (channel = 0U; channel < PDU_NUM_EFUSES; channel++)
     {
         uint16_t device_config = 0U;
         uint16_t verify_device_config = 0U;
-        uint8_t retry_config = TPS25990_RETRY_CONFIG_DEFAULT;
+        uint16_t target_device_config;
+        uint8_t retry_config;
         uint8_t verify_retry_config = 0U;
+        uint8_t verify_oc_timer = 0U;
+        uint8_t verify_viref = 0U;
+        uint16_t verify_vin_uv_flt = 0U;
+        uint16_t verify_vin_uv_warn = 0U;
+        uint16_t verify_ot_warn = 0U;
+        uint8_t verify_pk_min_avg = 0U;
 
         if (!pdu_pmbus_channel_allowed(channel))
         {
             continue;
         }
 
+        /* Skip relay-backed channels that aren't powered yet */
+        if (((PDU_RELAY_EFUSE_MASK >> channel) & 1U) != 0U && !pdu_efuse_powered[channel])
+        {
+            continue;
+        }
+
         if (!tps25990_unlock_writes(tps_addr[channel]))
         {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
 
+        /* ── read current device_config (used as base for mask/set) ── */
         if (!tps25990_read_device_config(tps_addr[channel], &device_config))
         {
             (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
 
-        device_config &= (uint16_t)(~TPS25990_DEVICE_CONFIG_SC_RETRY);
-        switch (pdu_desired_retry_mode)
-        {
-            case PDU_RETRY_MODE_FAST_SC:
-                device_config |= TPS25990_DEVICE_CONFIG_SC_RETRY;
-                retry_config = TPS25990_RETRY_CONFIG_DEFAULT;
-                break;
-            case PDU_RETRY_MODE_TEST:
-                retry_config = TPS25990_RETRY_CONFIG_TEST_MODE;
-                break;
-            case PDU_RETRY_MODE_RACE:
-            default:
-                retry_config = TPS25990_RETRY_CONFIG_RACE_MODE;
-                break;
-        }
+        target_device_config = pdu_get_target_device_config(channel, device_config);
+        retry_config = pdu_get_target_retry_config(channel);
 
-        if (!tps25990_write_device_config(tps_addr[channel], device_config))
+        /* ── write all protected registers ── */
+
+        if (!tps25990_write_device_config(tps_addr[channel], target_device_config))
         {
             (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
@@ -1234,37 +1442,155 @@ static bool pdu_apply_retry_mode(void)
         if (!tps25990_write_retry_config(tps_addr[channel], retry_config))
         {
             (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
 
-        if (!tps25990_lock_writes(tps_addr[channel]))
+        /* OC_TIMER = 0x77 (max overcurrent blanking interval) */
+        if (!tps25990_write_oc_timer(tps_addr[channel], TPS25990_OC_TIMER_MAX_VALUE))
         {
+            (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
+
+        /* VIREF = 0x3F (1.186 V, max internal reference) */
+        if (!tps25990_write_viref(tps_addr[channel], TPS25990_VIREF_1V186_VALUE))
+        {
+            (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        /* VIN_UV_FLT = 0 (minimum — effectively disabled) */
+        if (!tps25990_write_vin_uv_flt(tps_addr[channel], TPS25990_VIN_UV_FLT_MIN_VALUE))
+        {
+            (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        /* VIN_UV_WARN = ~9 V */
+        if (!tps25990_write_vin_uv_warn(tps_addr[channel], TPS25990_VIN_UV_WARN_9V_VALUE))
+        {
+            (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        /* OT_WARN = 85 °C */
+        if (!tps25990_write_ot_warn(tps_addr[channel], TPS25990_OT_WARN_85C_VALUE))
+        {
+            (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        /* PK_MIN_AVG with AVG_CNT = 111 (128‑sample hardware averaging) */
+        if (!tps25990_write_pk_min_avg(tps_addr[channel], TPS25990_PK_MIN_AVG_AVG_CNT_128))
+        {
+            (void)tps25990_lock_writes(tps_addr[channel]);
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        /* ── re‑lock ── */
+        if (!tps25990_lock_writes(tps_addr[channel]))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        /* CLEAR_FAULTS + settle delay after locked register writes */
+        (void)tps25990_clear_faults(tps_addr[channel]);
+        SYSTICK_DelayMs(1U);
+
+        /* ── readback verification ── */
 
         if (!tps25990_read_device_config(tps_addr[channel], &verify_device_config))
         {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
 
         if (!tps25990_read_retry_config(tps_addr[channel], &verify_retry_config))
         {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
 
-        if ((verify_device_config != device_config) || (verify_retry_config != retry_config))
+        if (!tps25990_read_oc_timer(tps_addr[channel], &verify_oc_timer))
         {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
             all_ok = false;
             continue;
         }
 
-        if (channel == 0U)
+        if (!tps25990_read_viref(tps_addr[channel], &verify_viref))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        if (!tps25990_read_vin_uv_flt(tps_addr[channel], &verify_vin_uv_flt))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        if (!tps25990_read_vin_uv_warn(tps_addr[channel], &verify_vin_uv_warn))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        if (!tps25990_read_ot_warn(tps_addr[channel], &verify_ot_warn))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        if (!tps25990_read_pk_min_avg(tps_addr[channel], &verify_pk_min_avg))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        if ((verify_device_config != target_device_config) ||
+            (verify_retry_config != retry_config) ||
+            (verify_oc_timer != TPS25990_OC_TIMER_MAX_VALUE) ||
+            (verify_viref != TPS25990_VIREF_1V186_VALUE) ||
+            (verify_vin_uv_flt != TPS25990_VIN_UV_FLT_MIN_VALUE) ||
+            (verify_vin_uv_warn != TPS25990_VIN_UV_WARN_9V_VALUE) ||
+            (verify_ot_warn != TPS25990_OT_WARN_85C_VALUE) ||
+            (verify_pk_min_avg != TPS25990_PK_MIN_AVG_AVG_CNT_128))
+        {
+            pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
+            all_ok = false;
+            continue;
+        }
+
+        pdu_reg_verify_ok_mask |= (uint8_t)(1U << channel);
+
+        if (!verified_mode_set)
         {
             verified_mode = pdu_retry_mode_from_registers(verify_device_config, verify_retry_config);
+            verified_mode_set = true;
         }
         else if (verified_mode != pdu_retry_mode_from_registers(verify_device_config, verify_retry_config))
         {
@@ -1272,10 +1598,15 @@ static bool pdu_apply_retry_mode(void)
         }
     }
 
-    if (all_ok && pdu_retry_mode_is_valid(verified_mode))
+    if (all_ok && verified_mode_set && pdu_retry_mode_is_valid(verified_mode))
     {
         pdu_retry_mode_applied = true;
         pdu_active_retry_mode = verified_mode;
+    }
+    else if (all_ok && pdu_retry_mode_is_valid(pdu_desired_retry_mode))
+    {
+        pdu_retry_mode_applied = true;
+        pdu_active_retry_mode = pdu_desired_retry_mode;
     }
 
     return all_ok;
@@ -1544,7 +1875,12 @@ static void pdu_service_control_100hz(void)
     pdu_service_safety_inputs();
     pdu_handle_pending_control_command();
 
+    /* ── Relay-powered eFuse detection: check at 100 Hz ── */
+    pdu_service_relay_channels();
+
     en_ok = pdu_apply_requested_states(false);
+    pdu_output_apply_pending = false;
+    if (!en_ok)
     pdu_output_apply_pending = false;
     if (!en_ok)
     {
@@ -1583,7 +1919,7 @@ static void pdu_tc0_timer_callback(TC_TIMER_STATUS status, uintptr_t context)
     }
 
     telemetry_div++;
-    if (telemetry_div >= 100U)
+    if (telemetry_div >= 50U)
     {
         telemetry_div = 0U;
         pdu_telemetry_service_pending = true;
@@ -1819,6 +2155,50 @@ static bool pdu_can_send_retry_mode_frame(uint8_t mode, uint8_t applied)
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
 
+static uint8_t pdu_get_input8_status_byte(void)
+{
+    return (GPIO_PB15_Get() == 0U) ? PDU_INPUT8_CAN_ASSERTED_VALUE : PDU_INPUT8_CAN_DEASSERTED_VALUE;
+}
+
+static bool pdu_can_send_input8_status_frame(uint8_t input8_state)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_INPUT8_STATUS);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 1U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = input8_state;
+    tx.data[1] = 0U;
+    tx.data[2] = 0U;
+    tx.data[3] = 0U;
+    tx.data[4] = 0U;
+    tx.data[5] = 0U;
+    tx.data[6] = 0U;
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
 static bool pdu_can_send_adc_ref_frame(uint8_t reference, uint8_t applied)
 {
     CAN_TX_BUFFER tx = { 0 };
@@ -1854,6 +2234,164 @@ static bool pdu_can_send_adc_ref_frame(uint8_t reference, uint8_t applied)
     tx.data[5] = 0U;
     tx.data[6] = 0U;
     tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_reg_verify_frame(uint8_t ok_mask, uint8_t fail_mask)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_REG_VERIFY_STAT);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = ok_mask;
+    tx.data[1] = fail_mask;
+    tx.data[2] = 0U;
+    tx.data[3] = 0U;
+    tx.data[4] = 0U;
+    tx.data[5] = 0U;
+    tx.data[6] = 0U;
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_ext_status_frame(uint16_t id, uint16_t status_word,
+    uint8_t status_iout, uint8_t status_temp, uint8_t status_input,
+    uint8_t status_cml, uint8_t status_mfr, uint8_t status_out)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(id);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(status_word & 0xFFU);
+    tx.data[1] = (uint8_t)((status_word >> 8) & 0xFFU);
+    tx.data[2] = status_iout;
+    tx.data[3] = status_temp;
+    tx.data[4] = status_input;
+    tx.data[5] = status_cml;
+    tx.data[6] = status_mfr;
+    tx.data[7] = status_out;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_mfr2_frame(uint16_t id, uint16_t raw_mfr2)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(id);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(raw_mfr2 & 0xFFU);
+    tx.data[1] = (uint8_t)((raw_mfr2 >> 8) & 0xFFU);
+    tx.data[2] = 0U;
+    tx.data[3] = 0U;
+    tx.data[4] = 0U;
+    tx.data[5] = 0U;
+    tx.data[6] = 0U;
+    tx.data[7] = 0U;
+
+    return CAN1_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_pmbus_stats_frame(uint16_t sweeps_per_sec, uint16_t sweep_last_ms, uint16_t sweep_errors)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint32_t wait_count = 0UL;
+
+    (void)pdu_can_recover_if_needed();
+
+    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    {
+        wait_count++;
+    }
+
+    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_PMBUS_STATS);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    tx.data[0] = (uint8_t)(sweeps_per_sec & 0xFFU);
+    tx.data[1] = (uint8_t)((sweeps_per_sec >> 8) & 0xFFU);
+    tx.data[2] = (uint8_t)(sweep_last_ms & 0xFFU);
+    tx.data[3] = (uint8_t)((sweep_last_ms >> 8) & 0xFFU);
+    tx.data[4] = (uint8_t)(pdu_pmbus_sweep_count & 0xFFU);
+    tx.data[5] = (uint8_t)((pdu_pmbus_sweep_count >> 8) & 0xFFU);
+    tx.data[6] = (uint8_t)(sweep_errors & 0xFFU);
+    tx.data[7] = (uint8_t)((sweep_errors >> 8) & 0xFFU);
 
     return CAN1_MessageTransmitFifo(1U, &tx);
 }
@@ -2555,6 +3093,8 @@ static void pdu_note_pmbus_error(pmbus_status_t st, uint8_t channel, uint8_t com
     {
         pdu_error_set(PDU_ERR_NACK_OR_BUS);
     }
+
+    pdu_pmbus_sweep_errors++;
 }
 
 void PDU_Init(void)
@@ -2591,6 +3131,8 @@ void PDU_Init(void)
     pdu_safety_release_pending = false;
     pdu_safety_release_start_ms = 0U;
     pdu_uptime_ms = 0U;
+    pdu_pmbus_sweep_start_ms = 0U;
+    pdu_pmbus_sweep_count = 0U;
     pdu_ecu_raw_byte0 = 0U;
     pdu_ecu_raw_byte1 = 0U;
     pdu_ecu_raw_dlc = 0U;
@@ -2645,11 +3187,18 @@ void PDU_Init(void)
     }
     for (bit = 0U; bit < PDU_NUM_EFUSES; bit++)
     {
+        /* Ping each eFuse to detect if it is powered.
+         * Relay-backed channels (IGN, Fuel) will report false until the
+         * relay closes — they are initialised later by the control loop. */
+        pdu_efuse_powered[bit] = pdu_i2c_ping(tps_addr[bit]);
+        pdu_efuse_init_done[bit] = false;
         (void)tps25990_clear_faults(tps_addr[bit]);
         pdu_applied_efuse_valid[bit] = false;
     }
     pdu_applied_other_fused_valid = false;
     pdu_retry_mode_applied = false;
+
+    /* ── Init only eFuses that are already powered ── */
     if (!pdu_apply_retry_mode())
     {
         pdu_error_set(PDU_ERR_ENABLE_FAIL);
@@ -2660,7 +3209,20 @@ void PDU_Init(void)
         pdu_error_set(PDU_ERR_ENABLE_FAIL);
         pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PDU_ADC_REF_CMD);
     }
-    pdu_force_start_output_on();
+
+    /* Post‑init CLEAR_FAULTS pass — catch any CML faults accumulated during
+     * the many PMBus transactions in pdu_apply_retry_mode(). */
+    for (bit = 0U; bit < PDU_NUM_EFUSES; bit++)
+    {
+        if (pdu_pmbus_channel_allowed(bit))
+        {
+            (void)tps25990_clear_faults(tps_addr[bit]);
+        }
+    }
+
+    /* Transmit register verify status so the dashboard can show results */
+    (void)pdu_can_send_reg_verify_frame(pdu_reg_verify_ok_mask, pdu_reg_verify_fail_mask);
+
     (void)pdu_apply_requested_states(true);
 }
 
@@ -2706,14 +3268,19 @@ void PDU_PollAndSendTelemetry(void)
     float temp_sum_c = 0.0f;
     uint8_t temp_count = 0U;
     float temp_peak_c = -200.0f;
-    float hybrid_current_a = 0.0f;
-    bool hybrid_current_valid = false;
-    bool hybrid_cutoff_trigger = false;
+
     uint8_t err_flags = 0U;
 
     pdu_debug_stage = PDU_STAGE_TELEMETRY;
     pdu_error_age();
     pdu_error_details_age();
+
+    /* ── Register verify status — sent FIRST before CAN FIFO fills ── */
+    if (!pdu_can_send_reg_verify_frame(pdu_reg_verify_ok_mask, pdu_reg_verify_fail_mask))
+    {
+        pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+    }
+
     if (pdu_i2c_scan_div >= 10U)
     {
         pdu_i2c_scan_div = 0U;
@@ -2742,7 +3309,13 @@ void PDU_PollAndSendTelemetry(void)
         uint16_t diff_ma = 0U;
         uint16_t status = 0xFFFFU;
         uint16_t temp_raw = 0U;
+        uint16_t mfr2_raw = 0U;
         uint8_t cml_raw = 0U;
+        uint8_t siout_raw = 0U;
+        uint8_t stemp_raw = 0U;
+        uint8_t sin_raw = 0U;
+        uint8_t smfr_raw = 0U;
+        uint8_t sout_raw = 0U;
         uint8_t adc_flags = PDU_ADC_FLAG_VALID;
         uint8_t temp_valid = 0U;
         float adc_voltage_v;
@@ -2761,37 +3334,59 @@ void PDU_PollAndSendTelemetry(void)
 
         if (pdu_pmbus_channel_allowed(i))
         {
-            failed_cmd = PMBUS_CMD_READ_VIN;
-            st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VIN, &vin_raw);
-            if (st == PMBUS_OK)
+            /* Skip relay-backed channels that aren't powered yet */
+            if (((PDU_RELAY_EFUSE_MASK >> i) & 1U) != 0U && !pdu_efuse_powered[i])
             {
-                failed_cmd = PMBUS_CMD_READ_VOUT;
-                st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw);
+                st = PMBUS_TIMEOUT;
+                status = 0xFFFFU;
             }
-            if (st == PMBUS_OK)
+            else
             {
-                failed_cmd = PMBUS_CMD_READ_IIN;
-                st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_IIN, &iraw);
-            }
-            if (st == PMBUS_OK)
-            {
-                failed_cmd = PMBUS_CMD_READ_PIN;
-                st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_PIN, &praw);
-            }
-            if (st == PMBUS_OK)
-            {
-                failed_cmd = PMBUS_CMD_READ_TEMP;
-                st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_TEMP, &temp_raw);
-            }
-            if (st == PMBUS_OK)
-            {
-                failed_cmd = PMBUS_CMD_STATUS_WORD;
-                st = pmbus_read_word(tps_addr[i], PMBUS_CMD_STATUS_WORD, &status);
-            }
-            if (st == PMBUS_OK)
-            {
-                failed_cmd = TPS25990_CMD_STATUS_CML;
-                st = pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_CML, &cml_raw);
+                failed_cmd = PMBUS_CMD_READ_VIN;
+                st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VIN, &vin_raw);
+                if (st == PMBUS_OK)
+                {
+                    failed_cmd = PMBUS_CMD_READ_VOUT;
+                    st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_VOUT, &vraw);
+                }
+                if (st == PMBUS_OK)
+                {
+                    failed_cmd = PMBUS_CMD_READ_IIN;
+                    st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_IIN, &iraw);
+                }
+                if (st == PMBUS_OK)
+                {
+                    failed_cmd = PMBUS_CMD_READ_PIN;
+                    st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_PIN, &praw);
+                }
+                if (st == PMBUS_OK)
+                {
+                    failed_cmd = PMBUS_CMD_READ_TEMP;
+                    st = pmbus_read_word(tps_addr[i], PMBUS_CMD_READ_TEMP, &temp_raw);
+                }
+                if (st == PMBUS_OK)
+                {
+                    failed_cmd = PMBUS_CMD_STATUS_WORD;
+                    st = pmbus_read_word(tps_addr[i], PMBUS_CMD_STATUS_WORD, &status);
+                }
+                if (st == PMBUS_OK)
+                {
+                    failed_cmd = TPS25990_CMD_STATUS_CML;
+                    st = pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_CML, &cml_raw);
+                }
+                /* ── extended status byte reads (non‑fatal if they fail) ── */
+                if (st == PMBUS_OK)
+                {
+                    (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_IOUT, &siout_raw);
+                    (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_TEMP, &stemp_raw);
+                    (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_IN, &sin_raw);
+                    (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_MFR, &smfr_raw);
+                    (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_VOUT, &sout_raw);
+                    if (pdu_debug_ttl_polls > 0U)
+                    {
+                        (void)pmbus_read_word(tps_addr[i], TPS25990_CMD_STATUS_MFR_SPECIFIC_2, &mfr2_raw);
+                    }
+                }
             }
         }
         else
@@ -2815,11 +3410,6 @@ void PDU_PollAndSendTelemetry(void)
             adc_flags |= PDU_ADC_FLAG_PMBUS_VALID;
 
             sum_current_ma += (pmbus_current_a * 1000.0f);
-            if (i == 0U)
-            {
-                hybrid_current_a = pmbus_current_a;
-                hybrid_current_valid = true;
-            }
             temp_sum_c += temp_c;
             temp_count++;
             if (temp_c > temp_peak_c)
@@ -2862,6 +3452,22 @@ void PDU_PollAndSendTelemetry(void)
             }
         }
 
+        /* ── Extended status frame (0x780-0x787) – always sent ── */
+        if (!pdu_can_send_ext_status_frame((uint16_t)(PDU_CAN_ID_EFUSE_STATUS_BASE + i),
+                status, siout_raw, stemp_raw, sin_raw, cml_raw, smfr_raw, sout_raw))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        }
+
+        if (pdu_debug_ttl_polls > 0U)
+        {
+            /* ── MFR2 status frame (0x788-0x78F) – debug only ── */
+            if (!pdu_can_send_mfr2_frame((uint16_t)(PDU_CAN_ID_EFUSE_MFR2_BASE + i), mfr2_raw))
+            {
+                pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+            }
+        }
+
         if (pdu_debug_ttl_polls > 0U)
         {
             if (!pdu_can_send_adc_frame((uint16_t)(PDU_CAN_ID_ADC_BASE + i), adc_ma, adc_mv, diff_ma, adc_flags, cml_raw)) {
@@ -2896,6 +3502,18 @@ void PDU_PollAndSendTelemetry(void)
         pdu_comm_fail_streak = 0U;
     }
 
+    /* ── Clear CML faults on all powered channels after each cycle ── */
+    {
+        uint8_t clr_ch;
+        for (clr_ch = 0U; clr_ch < PDU_NUM_EFUSES; clr_ch++)
+        {
+            if (pdu_pmbus_channel_allowed(clr_ch) && pdu_efuse_powered[clr_ch])
+            {
+                (void)tps25990_clear_faults(tps_addr[clr_ch]);
+            }
+        }
+    }
+
     shunt_ma = pdu_float_to_u16_scaled(PDU_ADC_ReadNonfuseCurrent(), 1000.0f);
     sum_current_ma += (float)shunt_ma;
 
@@ -2906,17 +3524,6 @@ void PDU_PollAndSendTelemetry(void)
         if ((vin_cycle_avg_v > 0.0f) && ((vin_cycle_avg_v * 1000.0f) < 10000.0f || (vin_cycle_avg_v * 1000.0f) > 15000.0f))
         {
             err_flags |= PDU_ERRFLAG_BAD_VOLTAGE;
-        }
-
-        if (!pdu_hybrid_cutoff_latched && (vin_cycle_avg_v < PDU_HYBRID_CUTOFF_VIN_V) && hybrid_current_valid && (hybrid_current_a > PDU_HYBRID_CUTOFF_CURRENT_A))
-        {
-            pdu_hybrid_cutoff_latched = true;
-            pdu_resolve_output_control();
-            (void)pdu_apply_efuse_state(0U, true);
-        }
-        else if (pdu_hybrid_cutoff_latched && (vin_cycle_avg_v >= PDU_HYBRID_CUTOFF_VIN_V))
-        {
-            pdu_hybrid_cutoff_latched = false;
         }
 
         /* Save VIN average in millivolts for summary send below */
@@ -2989,6 +3596,42 @@ void PDU_PollAndSendTelemetry(void)
         pdu_error_set(PDU_ERR_CAN_TX_FAIL);
         pdu_debug_flags = pdu_error_bitmap_get();
         pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, 0x00U);
+    }
+
+    if (!pdu_can_send_input8_status_frame(pdu_get_input8_status_byte()))
+    {
+        pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, 0x85U);
+    }
+
+    /* ── Always-sent frames (regardless of debug TTL) ── */
+
+
+    /* PMBus loop sweep tracking */
+    pdu_pmbus_sweep_count++;
+    {
+        uint32_t now_ms = pdu_uptime_ms;
+        uint32_t elapsed = now_ms - pdu_pmbus_sweep_start_ms;
+        if (elapsed >= 1000U)
+        {
+            pdu_pmbus_sweeps_per_sec = (uint16_t)((pdu_pmbus_sweep_count * 1000U + (elapsed / 2U)) / elapsed);
+            pdu_pmbus_sweep_last_ms = (uint16_t)((elapsed * 10U + (pdu_pmbus_sweep_count / 2U)) / pdu_pmbus_sweep_count);
+            pdu_pmbus_sweep_count = 0U;
+            pdu_pmbus_sweep_start_ms = now_ms;
+        }
+    }
+    if (pdu_pmbus_stats_div >= 5U)
+    {
+        pdu_pmbus_stats_div = 0U;
+        if (!pdu_can_send_pmbus_stats_frame(pdu_pmbus_sweeps_per_sec, pdu_pmbus_sweep_last_ms,
+                                             pdu_pmbus_sweep_errors))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        }
+    }
+    else
+    {
+        pdu_pmbus_stats_div++;
     }
 
     if (pdu_debug_ttl_polls > 0U)

@@ -116,8 +116,10 @@ static void decode_status_in(uint8_t raw, tps25990_status_in_t *out)
     out->vin_ov_fault = (raw & TPS25990_SIN_VIN_OV_FLT) != 0U;
     out->vin_ov_warn  = (raw & TPS25990_SIN_VIN_OV_WARN) != 0U;
     out->vin_uv_warn  = (raw & TPS25990_SIN_VIN_UV_WARN) != 0U;
-    out->oc_fault     = (raw & TPS25990_SIN_OC_FLT) != 0U;
     out->vin_uv_fault = (raw & TPS25990_SIN_VIN_UV_FLT) != 0U;
+    out->oc_fault     = (raw & TPS25990_SIN_OC_FLT) != 0U;
+    out->oc_warn      = (raw & TPS25990_SIN_OC_WARN) != 0U;
+    out->in_op_warn   = (raw & TPS25990_SIN_IN_OP_WARN) != 0U;
 }
 
 /**
@@ -141,6 +143,27 @@ static void decode_status_mfr(uint8_t raw, tps25990_status_mfr_t *out)
     out->short_fault = (raw & TPS25990_SMFR_SHORT_FLT) != 0U;
     out->hotswap     = (raw & TPS25990_SMFR_HOTSWAP) != 0U;
     out->fet_health  = (raw & TPS25990_SMFR_FET_HEALTH) != 0U;
+    out->soa_flt     = (raw & TPS25990_SMFR_SOA_FLT) != 0U;
+    out->ext_flt     = (raw & TPS25990_SMFR_EXT_FLT) != 0U;
+}
+
+static void decode_status_mfr2(uint16_t raw, tps25990_status_mfr2_t *out)
+{
+    out->pgoodb            = (raw & TPS25990_SMFR2_PGOODB) != 0U;
+    out->spfail            = (raw & TPS25990_SMFR2_SPFAIL) != 0U;
+    out->sc_flt            = (raw & TPS25990_SMFR2_SC_FLT) != 0U;
+    out->oc_det            = (raw & TPS25990_SMFR2_OC_DET) != 0U;
+    out->ein_of_warn       = (raw & TPS25990_SMFR2_EIN_OF_WARN) != 0U;
+    out->vin_tran          = (raw & TPS25990_SMFR2_VIN_TRAN) != 0U;
+    out->retry_rec         = (raw & TPS25990_SMFR2_RETRY_REC) != 0U;
+    out->power_cycle_rec   = (raw & TPS25990_SMFR2_POWER_CYCLE_REC) != 0U;
+    out->init_done         = (raw & TPS25990_SMFR2_INIT_DONE) != 0U;
+    out->config_nvm_stat   = (raw & TPS25990_SMFR2_CONFIG_NVM_STAT) != 0U;
+}
+
+static void decode_status_out(uint8_t raw, tps25990_status_out_t *out)
+{
+    out->vout_uv_warn = (raw & TPS25990_SOUT_VOUT_UV_WARN) != 0U;
 }
 
 bool tps25990_read_all(uint8_t addr, tps25990_data_t *d)
@@ -224,6 +247,7 @@ bool tps25990_read_status_word(uint8_t addr, tps25990_status_word_t *out)
 bool tps25990_read_full_status(uint8_t addr, tps25990_full_status_t *out)
 {
     uint16_t word_raw;
+    uint16_t mfr2_raw;
     uint8_t byte_raw;
     
     if (out == NULL) {
@@ -256,6 +280,12 @@ bool tps25990_read_full_status(uint8_t addr, tps25990_full_status_t *out)
     }
     decode_status_temp(byte_raw, &out->temp);
 
+    /* Read STATUS_OUT (VOUT status) */
+    if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_VOUT, &byte_raw) != PMBUS_OK) {
+        return false;
+    }
+    decode_status_out(byte_raw, &out->status_out);
+
     /* Read STATUS_IN */
     if (pmbus_read_byte(addr, TPS25990_CMD_STATUS_IN, &byte_raw) != PMBUS_OK) {
         return false;
@@ -273,6 +303,13 @@ bool tps25990_read_full_status(uint8_t addr, tps25990_full_status_t *out)
         return false;
     }
     decode_status_mfr(byte_raw, &out->mfr);
+
+    /* Read STATUS_MFR_SPECIFIC_2 */
+    if (pmbus_read_word(addr, TPS25990_CMD_STATUS_MFR_SPECIFIC_2, &mfr2_raw) != PMBUS_OK) {
+        return false;
+    }
+    out->raw_mfr2 = mfr2_raw;
+    decode_status_mfr2(mfr2_raw, &out->mfr2);
 
     return true;
 }
@@ -342,4 +379,84 @@ bool tps25990_read_retry_config(uint8_t addr, uint8_t *out)
 bool tps25990_write_retry_config(uint8_t addr, uint8_t value)
 {
     return pmbus_write_byte(addr, TPS25990_CMD_RETRY_CONFIG, value) == PMBUS_OK;
+}
+
+bool tps25990_read_oc_timer(uint8_t addr, uint8_t *out)
+{
+    if (out == NULL)
+    {
+        return false;
+    }
+
+    return pmbus_read_byte(addr, TPS25990_CMD_OC_TIMER, out) == PMBUS_OK;
+}
+
+bool tps25990_write_oc_timer(uint8_t addr, uint8_t value)
+{
+    return pmbus_write_byte(addr, TPS25990_CMD_OC_TIMER, value) == PMBUS_OK;
+}
+
+bool tps25990_read_viref(uint8_t addr, uint8_t *out)
+{
+    if (out == NULL)
+    {
+        return false;
+    }
+
+    return pmbus_read_byte(addr, TPS25990_CMD_VIREF, out) == PMBUS_OK;
+}
+
+bool tps25990_write_viref(uint8_t addr, uint8_t value)
+{
+    return pmbus_write_byte(addr, TPS25990_CMD_VIREF, value) == PMBUS_OK;
+}
+
+bool tps25990_read_vin_uv_flt(uint8_t addr, uint16_t *out)
+{
+    if (out == NULL) { return false; }
+    return pmbus_read_word(addr, TPS25990_CMD_VIN_UV_FLT, out) == PMBUS_OK;
+}
+
+bool tps25990_write_vin_uv_flt(uint8_t addr, uint16_t value)
+{
+    return pmbus_write_word(addr, TPS25990_CMD_VIN_UV_FLT, value) == PMBUS_OK;
+}
+
+bool tps25990_read_vin_uv_warn(uint8_t addr, uint16_t *out)
+{
+    if (out == NULL) { return false; }
+    return pmbus_read_word(addr, TPS25990_CMD_VIN_UV_WARN, out) == PMBUS_OK;
+}
+
+bool tps25990_write_vin_uv_warn(uint8_t addr, uint16_t value)
+{
+    return pmbus_write_word(addr, TPS25990_CMD_VIN_UV_WARN, value) == PMBUS_OK;
+}
+
+bool tps25990_read_ot_warn(uint8_t addr, uint16_t *out)
+{
+    if (out == NULL) { return false; }
+    return pmbus_read_word(addr, TPS25990_CMD_OT_WARN, out) == PMBUS_OK;
+}
+
+bool tps25990_write_ot_warn(uint8_t addr, uint16_t value)
+{
+    return pmbus_write_word(addr, TPS25990_CMD_OT_WARN, value) == PMBUS_OK;
+}
+
+bool tps25990_read_status_temp(uint8_t addr, uint8_t *out)
+{
+    if (out == NULL) { return false; }
+    return pmbus_read_byte(addr, TPS25990_CMD_STATUS_TEMP, out) == PMBUS_OK;
+}
+
+bool tps25990_read_pk_min_avg(uint8_t addr, uint8_t *out)
+{
+    if (out == NULL) { return false; }
+    return pmbus_read_byte(addr, TPS25990_CMD_PK_MIN_AVG, out) == PMBUS_OK;
+}
+
+bool tps25990_write_pk_min_avg(uint8_t addr, uint8_t value)
+{
+    return pmbus_write_byte(addr, TPS25990_CMD_PK_MIN_AVG, value) == PMBUS_OK;
 }

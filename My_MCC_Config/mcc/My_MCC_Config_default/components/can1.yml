@@ -1,6 +1,6 @@
 configVersion: 1.0.0
 componentName: can1
-coreVersion: 5.8.4
+coreVersion: 5.9.0
 device: PIC32CM5164JH01064
 library: []
 dependency:
@@ -192,6 +192,7 @@ data:
     TX_FIFO_WATERMARK:
       attributes:
         id: TX_FIFO_WATERMARK
+        label: Watermark at element
       children:
       - children:
         - attributes:
@@ -203,10 +204,11 @@ data:
     TX_FIFO_ELEMENTS:
       attributes:
         id: TX_FIFO_ELEMENTS
+        label: Number of Elements
       children:
       - children:
         - attributes:
-            value: '4'
+            value: '6'
           type: User
         type: Values
       type: Integer
@@ -458,6 +460,17 @@ data:
     FILTERS_STD_REJECT:
       attributes:
         id: FILTERS_STD_REJECT
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    TXBUF_USE:
+      attributes:
+        id: TXBUF_USE
+        label: Use Dedicated Tx Buffer
       children:
       - children:
         - attributes:
