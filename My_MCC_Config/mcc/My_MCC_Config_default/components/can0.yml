@@ -67,10 +67,11 @@ data:
     RXBUF_USE:
       attributes:
         id: RXBUF_USE
+        label: Use Dedicated Rx Buffer
       children:
       - children:
         - attributes:
-            value: 'true'
+            value: 'false'
           type: User
         type: Values
       type: Boolean
@@ -137,6 +138,7 @@ data:
     TX_FIFO_WATERMARK:
       attributes:
         id: TX_FIFO_WATERMARK
+        label: Watermark at element
       children:
       - children:
         - attributes:
@@ -148,11 +150,272 @@ data:
     TX_FIFO_ELEMENTS:
       attributes:
         id: TX_FIFO_ELEMENTS
+        label: Number of Elements
       children:
       - children:
         - attributes:
-            value: '16'
+            value: '32'
           type: User
         type: Values
       type: Integer
+    FILTERS_STD_REJECT:
+      attributes:
+        id: FILTERS_STD_REJECT
+        label: Reject Standard Remote Frames
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    FILTERS_EXT_REJECT:
+      attributes:
+        id: FILTERS_EXT_REJECT
+        label: Reject Extended Remote Frames
+      children:
+      - children:
+        - attributes:
+            value: 'true'
+          type: User
+        type: Values
+      type: Boolean
+    CAN0_STD_FILTER1:
+      attributes:
+        id: CAN0_STD_FILTER1
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: Menu
+    CAN0_STD_FILTER2:
+      attributes:
+        id: CAN0_STD_FILTER2
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: Menu
+    CAN0_STD_FILTER3:
+      attributes:
+        id: CAN0_STD_FILTER3
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: Menu
+    CAN0_STD_FILTER4:
+      attributes:
+        id: CAN0_STD_FILTER4
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: Menu
+    CAN0_STD_FILTER5:
+      attributes:
+        id: CAN0_STD_FILTER5
+      children:
+      - children:
+        - attributes:
+            id: enabled
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        - attributes:
+            id: visible
+          children:
+          - type: Value
+            value: 'true'
+          type: Boolean
+        type: Attributes
+      type: Menu
+    FILTERS_STD:
+      attributes:
+        id: FILTERS_STD
+        label: 'Number of Standard Filters:'
+      children:
+      - children:
+        - attributes:
+            value: '5'
+          type: User
+        type: Values
+      type: Integer
+    CAN0_STD_FILTER1_SFID1:
+      attributes:
+        id: CAN0_STD_FILTER1_SFID1
+        label: ID1
+      children:
+      - children:
+        - attributes:
+            value: '121'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER1_SFID2:
+      attributes:
+        id: CAN0_STD_FILTER1_SFID2
+        label: ID2
+      children:
+      - children:
+        - attributes:
+            value: '129'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER2_SFID1:
+      attributes:
+        id: CAN0_STD_FILTER2_SFID1
+        label: ID1
+      children:
+      - children:
+        - attributes:
+            value: '409'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER2_SFID2:
+      attributes:
+        id: CAN0_STD_FILTER2_SFID2
+        label: ID2
+      children:
+      - children:
+        - attributes:
+            value: '513'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER3_CONFIG:
+      attributes:
+        id: CAN0_STD_FILTER3_CONFIG
+        label: Element Configuration
+      children:
+      - children:
+        - attributes:
+            value: '3'
+          type: User
+        type: Values
+      type: KeyValueSet
+    CAN0_STD_FILTER4_CONFIG:
+      attributes:
+        id: CAN0_STD_FILTER4_CONFIG
+        label: Element Configuration
+      children:
+      - children:
+        - attributes:
+            value: '3'
+          type: User
+        type: Values
+      type: KeyValueSet
+    CAN0_STD_FILTER5_CONFIG:
+      attributes:
+        id: CAN0_STD_FILTER5_CONFIG
+        label: Element Configuration
+      children:
+      - children:
+        - attributes:
+            value: '3'
+          type: User
+        type: Values
+      type: KeyValueSet
+    CAN0_STD_FILTER3_SFID2:
+      attributes:
+        id: CAN0_STD_FILTER3_SFID2
+        label: ID2
+      children:
+      - children:
+        - attributes:
+            value: '120'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER4_SFID1:
+      attributes:
+        id: CAN0_STD_FILTER4_SFID1
+        label: ID1
+      children:
+      - children:
+        - attributes:
+            value: '129'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER4_SFID2:
+      attributes:
+        id: CAN0_STD_FILTER4_SFID2
+        label: ID2
+      children:
+      - children:
+        - attributes:
+            value: '408'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER5_SFID1:
+      attributes:
+        id: CAN0_STD_FILTER5_SFID1
+        label: ID1
+      children:
+      - children:
+        - attributes:
+            value: '514'
+          type: User
+        type: Values
+      type: Hex
+    CAN0_STD_FILTER5_SFID2:
+      attributes:
+        id: CAN0_STD_FILTER5_SFID2
+        label: ID2
+      children:
+      - children:
+        - attributes:
+            value: '2047'
+          type: User
+        type: Values
+      type: Hex
   userData: {}

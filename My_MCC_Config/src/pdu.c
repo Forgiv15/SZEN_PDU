@@ -41,7 +41,6 @@
 #define PDU_ECU_RAW_FLAG_DLC_OK     (1U << 3)
 #define PDU_PMBUS_PEC_MODE_REQUIRED 0U
 #define PDU_CAN_STD_ID_SHIFT        18U
-#define PDU_CAN_TX_WAIT_LOOPS       50000UL
 
 /* MCU telemetry active error bitmap (byte1 in 0x520 frame) */
 #define PDU_ERR_ENABLE_FAIL          (1U << 0)
@@ -66,8 +65,7 @@
 #define PDU_I2C_SCAN_MAX_FRAME_COUNT  (((PDU_I2C_SCAN_FULL_END_ADDR - PDU_I2C_SCAN_FULL_START_ADDR + 1U) + 7U) / 8U)
 #define PDU_I2C_SCAN_MODE_EFUSE       0U
 #define PDU_I2C_SCAN_MODE_FULL        1U
-#define PDU_I2C_SCAN_FLAG_HYBRID_ONLY (1U << 0)
-#define PDU_I2C_SCAN_FLAG_FULL_RANGE  (1U << 1)
+#define PDU_I2C_SCAN_FLAG_FULL_RANGE  (1U << 0)
 
 /* Detailed error codes */
 #define PDU_ERR_CODE_CAN_TX_FAIL     10U
@@ -192,17 +190,17 @@ static const pdu_adc_channel_t pdu_adc_channels[PDU_NUM_EFUSES] =
 
 static const float pdu_r_imon_ohms[PDU_NUM_EFUSES] =
 {
-    3300.0f,  /* Hybrid  */
-    3300.0f,  /* Vent1   */
-    3300.0f,  /* Vent2   */
+    1000.0f,  /* Hybrid  */
+    1000.0f,  /* Vent1   */
+    1000.0f,  /* Vent2   */
     3300.0f,  /* IGN     */
     3300.0f,  /* Fuel    */
-    4700.0f,  /* WP1     */
-    4700.0f,  /* WP2     */
-    3300.0f   /* 12V     */
+    3300.0f,  /* WP1     */
+    3300.0f,  /* WP2     */
+    1000.0f   /* 12V     */
 };
 
-static uint8_t can1_msg_ram[CAN1_MESSAGE_RAM_CONFIG_SIZE] __attribute__((aligned(4)));
+static uint8_t can0_msg_ram[CAN0_MESSAGE_RAM_CONFIG_SIZE] __attribute__((aligned(4)));
 static uint8_t pdu_debug_flags = 0U;
 static uint8_t pdu_debug_stage = PDU_STAGE_INIT;
 static uint8_t pdu_last_error = 0U;
@@ -232,8 +230,7 @@ static uint8_t pdu_i2c_scan_start_addr = PDU_I2C_SCAN_START_ADDR;
 static uint8_t pdu_i2c_scan_end_addr = PDU_I2C_SCAN_END_ADDR;
 static uint8_t pdu_i2c_scan_frame_count = 0U;
 static uint8_t pdu_i2c_scan_frame_count_last = 0xFFU;
-static bool pdu_hybrid_only_mode = false;
-static bool pdu_hybrid_only_mode_last = false;
+/* hybrid-only mode removed — all 8 eFuses always accessible */
 static uint8_t pdu_comm_fail_streak = 0U;
 static volatile uint8_t pdu_debug_ttl_polls = 0U;
 static float pdu_vin_history[PDU_VIN_AVG_SAMPLES] = { 0.0f };
@@ -289,6 +286,7 @@ static volatile bool pdu_safety_refresh_pending = false;
 static volatile uint32_t pdu_uptime_ms = 0U;
 static volatile bool pdu_control_service_pending = false;
 static volatile bool pdu_telemetry_service_pending = false;
+static volatile bool pdu_telemetry_busy = false;
 static volatile bool pdu_output_apply_pending = false;
 static volatile bool pdu_pending_control_valid = false;
 static volatile uint8_t pdu_pending_control_opcode = PDU_CONTROL_OP_NOP;
@@ -414,6 +412,10 @@ static bool pdu_init_single_efuse(uint8_t channel)
     {
         return false;
     }
+
+    /* Clear any stale flags from previous attempts (relay channels) */
+    pdu_reg_verify_ok_mask  &= (uint8_t)(~(1U << channel));
+    pdu_reg_verify_fail_mask &= (uint8_t)(~(1U << channel));
 
     if (!pdu_pmbus_channel_allowed(channel))
     {
@@ -718,7 +720,7 @@ static void pdu_service_efuse_fault_recovery(uint8_t channel, uint16_t status)
 
 void PDU_CAN_Init(void)
 {
-    CAN1_MessageRAMConfigSet(can1_msg_ram);
+    CAN0_MessageRAMConfigSet(can0_msg_ram);
 }
 
 static bool pdu_adc_reference_is_valid(uint8_t reference)
@@ -966,18 +968,7 @@ static void pdu_set_other_fused_gpio(bool enabled)
 
 static bool pdu_pmbus_channel_allowed(uint8_t channel)
 {
-    if (channel >= PDU_NUM_EFUSES)
-    {
-        return false;
-    }
-
-    /* Skip channels excluded by the compile‑time enabled mask */
-    if (((uint8_t)(1U << channel) & PDU_ENABLED_EFUSE_MASK) == 0U)
-    {
-        return false;
-    }
-
-    return (!pdu_hybrid_only_mode) || (channel == 0U);
+    return (channel < PDU_NUM_EFUSES);
 }
 
 static void pdu_update_i2c_scan_range(void)
@@ -998,19 +989,7 @@ static void pdu_update_i2c_scan_range(void)
 
 static uint8_t pdu_get_i2c_scan_flags(void)
 {
-    uint8_t flags = 0U;
-
-    if (pdu_hybrid_only_mode)
-    {
-        flags |= PDU_I2C_SCAN_FLAG_HYBRID_ONLY;
-    }
-
-    if (pdu_i2c_scan_mode == PDU_I2C_SCAN_MODE_FULL)
-    {
-        flags |= PDU_I2C_SCAN_FLAG_FULL_RANGE;
-    }
-
-    return flags;
+    return (pdu_i2c_scan_mode == PDU_I2C_SCAN_MODE_FULL) ? PDU_I2C_SCAN_FLAG_FULL_RANGE : 0U;
 }
 
 static bool pdu_apply_other_fused_state(void)
@@ -1192,10 +1171,7 @@ static uint8_t pdu_get_resolved_output_mask(bool *start_enabled, uint8_t *contro
         start_on = true;
     }
 
-    if (pdu_hybrid_only_mode)
-    {
-        requested_mask &= 0x01U;
-    }
+    /* hybrid-only mode removed — all channels always accessible */
 
     if (start_enabled != NULL)
     {
@@ -1656,12 +1632,12 @@ static bool pdu_enable_all_pmbus_outputs(void)
 
 static bool pdu_can_recover_if_needed(void)
 {
-    CAN_ERROR err = CAN1_ErrorGet();
+    CAN_ERROR err = CAN0_ErrorGet();
 
     if ((err & CAN_ERROR_BUS_OFF) != 0U)
     {
-        CAN1_Initialize();
-        CAN1_MessageRAMConfigSet(can1_msg_ram);
+        CAN0_Initialize();
+        CAN0_MessageRAMConfigSet(can0_msg_ram);
     }
 
     return true;
@@ -1676,9 +1652,9 @@ static void pdu_process_control_can(void)
 {
     CAN_RX_BUFFER rx = { 0 };
 
-    while ((CAN1_REGS->CAN_RXF0S & CAN_RXF0S_F0FL_Msk) != 0U)
+    while ((CAN0_REGS->CAN_RXF0S & CAN_RXF0S_F0FL_Msk) != 0U)
     {
-        if (!CAN1_MessageReceiveFifo(CAN_RX_FIFO_0, 1U, &rx))
+        if (!CAN0_MessageReceiveFifo(CAN_RX_FIFO_0, 1U, &rx))
         {
             break;
         }
@@ -1760,7 +1736,6 @@ static void pdu_process_control_can(void)
                         pdu_control_service_pending = true;
                         break;
 
-                    case PDU_CONTROL_OP_HYBRID_ONLY:
                     case PDU_CONTROL_OP_I2C_SCAN_MODE:
                         pdu_pending_control_opcode = rx.data[2];
                         pdu_pending_control_param0 = rx.data[3];
@@ -1846,12 +1821,6 @@ static void pdu_handle_pending_control_command(void)
                     pdu_error_details_upsert(PDU_ERR_CODE_ENABLE_FAIL, 0xFFU, PDU_ADC_REF_CMD);
                 }
             }
-            break;
-
-        case PDU_CONTROL_OP_HYBRID_ONLY:
-            pdu_hybrid_only_mode = (param0 != 0U);
-            pdu_apply_resolved_gpio_outputs();
-            pdu_output_apply_pending = true;
             break;
 
         case PDU_CONTROL_OP_I2C_SCAN_MODE:
@@ -2003,19 +1972,31 @@ static bool pdu_adc_current_mismatch(float pmbus_current_a, float adc_current_a,
     return diff > allowed_diff;
 }
 
+static bool pdu_can_tx_fifo_ready(void)
+{
+    /* Brief retry — handles transient FIFO-full conditions (e.g. DMA mid‑move)
+     * without the multi‑ms blocking of the old 10000‑iteration spin‑wait.
+     * 500 iterations ≈ 4 µs at 120 MHz — enough for a register‑level handoff,
+     * but a truly full 32‑slot FIFO still returns false (frame is dropped). */
+    uint32_t retries = 500UL;
+    while (retries > 0UL)
+    {
+        if (CAN0_TxFifoFreeLevelGet() != 0U)
+        {
+            return true;
+        }
+        retries--;
+    }
+    return false;
+}
+
 static bool pdu_can_send_efuse_frame(uint16_t id, uint16_t mv, uint16_t ma, uint16_t p_10mw, uint16_t status_word)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    if (!pdu_can_tx_fifo_ready())
     {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U) {
         return false;
     }
 
@@ -2038,22 +2019,16 @@ static bool pdu_can_send_efuse_frame(uint16_t id, uint16_t mv, uint16_t ma, uint
     tx.data[6] = (uint8_t)(status_word & 0xFFU);
     tx.data[7] = (uint8_t)((status_word >> 8) & 0xFFU);
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_adc_frame(uint16_t id, uint16_t adc_ma, uint16_t adc_mv, uint16_t diff_ma, uint8_t flags, uint8_t cml_raw)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    if (!pdu_can_tx_fifo_ready())
     {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U) {
         return false;
     }
 
@@ -2076,22 +2051,16 @@ static bool pdu_can_send_adc_frame(uint16_t id, uint16_t adc_ma, uint16_t adc_mv
     tx.data[6] = flags;
     tx.data[7] = cml_raw;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_temp_frame(uint16_t id, int16_t temp_c_x10, uint8_t valid)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    if (!pdu_can_tx_fifo_ready())
     {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U) {
         return false;
     }
 
@@ -2114,22 +2083,16 @@ static bool pdu_can_send_temp_frame(uint16_t id, int16_t temp_c_x10, uint8_t val
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_retry_mode_frame(uint8_t mode, uint8_t applied)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    if (!pdu_can_tx_fifo_ready())
     {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U) {
         return false;
     }
 
@@ -2152,7 +2115,7 @@ static bool pdu_can_send_retry_mode_frame(uint8_t mode, uint8_t applied)
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static uint8_t pdu_get_input8_status_byte(void)
@@ -2163,16 +2126,9 @@ static uint8_t pdu_get_input8_status_byte(void)
 static bool pdu_can_send_input8_status_frame(uint8_t input8_state)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2196,22 +2152,15 @@ static bool pdu_can_send_input8_status_frame(uint8_t input8_state)
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_adc_ref_frame(uint8_t reference, uint8_t applied)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2235,22 +2184,15 @@ static bool pdu_can_send_adc_ref_frame(uint8_t reference, uint8_t applied)
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_reg_verify_frame(uint8_t ok_mask, uint8_t fail_mask)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2274,7 +2216,7 @@ static bool pdu_can_send_reg_verify_frame(uint8_t ok_mask, uint8_t fail_mask)
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_ext_status_frame(uint16_t id, uint16_t status_word,
@@ -2282,16 +2224,9 @@ static bool pdu_can_send_ext_status_frame(uint16_t id, uint16_t status_word,
     uint8_t status_cml, uint8_t status_mfr, uint8_t status_out)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2315,22 +2250,15 @@ static bool pdu_can_send_ext_status_frame(uint16_t id, uint16_t status_word,
     tx.data[6] = status_mfr;
     tx.data[7] = status_out;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_mfr2_frame(uint16_t id, uint16_t raw_mfr2)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2339,7 +2267,7 @@ static bool pdu_can_send_mfr2_frame(uint16_t id, uint16_t raw_mfr2)
     tx.rtr = 0U;
     tx.xtd = 0U;
     tx.esi = 0U;
-    tx.dlc = 8U;
+    tx.dlc = 2U;  /* MFR2 is only 2 bytes; DLC=8 would collide with efuse-detail decoder */
     tx.brs = 0U;
     tx.fdf = 0U;
     tx.efc = 0U;
@@ -2354,22 +2282,15 @@ static bool pdu_can_send_mfr2_frame(uint16_t id, uint16_t raw_mfr2)
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_pmbus_stats_frame(uint16_t sweeps_per_sec, uint16_t sweep_last_ms, uint16_t sweep_errors)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2393,7 +2314,7 @@ static bool pdu_can_send_pmbus_stats_frame(uint16_t sweeps_per_sec, uint16_t swe
     tx.data[6] = (uint8_t)(sweep_errors & 0xFFU);
     tx.data[7] = (uint8_t)((sweep_errors >> 8) & 0xFFU);
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_summary_frame(
@@ -2404,16 +2325,9 @@ static bool pdu_can_send_summary_frame(
     uint8_t flt_bitmap)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2437,7 +2351,7 @@ static bool pdu_can_send_summary_frame(
     tx.data[6] = err_flags;
     tx.data[7] = flt_bitmap;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_summary_extra_frame(
@@ -2450,16 +2364,9 @@ static bool pdu_can_send_summary_extra_frame(
     uint8_t dashboard_mask)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2483,7 +2390,7 @@ static bool pdu_can_send_summary_extra_frame(
     tx.data[6] = ecu_mask;
     tx.data[7] = dashboard_mask;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_mcu_frame(
@@ -2496,16 +2403,10 @@ static bool pdu_can_send_mcu_frame(
     uint8_t dbg_fail_command)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
+    if (!pdu_can_tx_fifo_ready())
     {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U) {
         return false;
     }
 
@@ -2528,22 +2429,15 @@ static bool pdu_can_send_mcu_frame(
     tx.data[6] = dbg_fail_channel;
     tx.data[7] = dbg_fail_command;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_ecu_raw_debug_frame(uint8_t flags, uint8_t decoded_mask, uint8_t requested_mask, uint8_t raw0, uint8_t raw1, uint8_t dlc, uint16_t rx_count)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2567,13 +2461,12 @@ static bool pdu_can_send_ecu_raw_debug_frame(uint8_t flags, uint8_t decoded_mask
     tx.data[6] = (uint8_t)((rx_count >> 8) & 0xFFU);
     tx.data[7] = requested_mask;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_pmbus_dbg_meta_frame(const pmbus_trace_t *trace)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
     uint32_t flags;
 
     if (trace == NULL)
@@ -2583,12 +2476,7 @@ static bool pdu_can_send_pmbus_dbg_meta_frame(const pmbus_trace_t *trace)
 
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2614,27 +2502,20 @@ static bool pdu_can_send_pmbus_dbg_meta_frame(const pmbus_trace_t *trace)
     tx.data[6] = (uint8_t)((flags >> 8) & 0xFFU);
     tx.data[7] = trace->sercom_error;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_pmbus_dbg_data_frame(const pmbus_trace_t *trace)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
-    if (trace == NULL)
+        if (trace == NULL)
     {
         return false;
     }
 
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2658,27 +2539,20 @@ static bool pdu_can_send_pmbus_dbg_data_frame(const pmbus_trace_t *trace)
     tx.data[6] = trace->rx[2];
     tx.data[7] = (uint8_t)(((trace->tx_len & 0x0FU) << 4) | (trace->rx_len & 0x0FU));
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_pmbus_dbg_ext_frame(const pmbus_trace_t *trace)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
-
-    if (trace == NULL)
+        if (trace == NULL)
     {
         return false;
     }
 
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2702,7 +2576,7 @@ static bool pdu_can_send_pmbus_dbg_ext_frame(const pmbus_trace_t *trace)
     tx.data[6] = pmbus_get_last_sercom_error();
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_can_send_pmbus_trace_frames(const pmbus_trace_t *trace)
@@ -2849,7 +2723,6 @@ static void pdu_error_details_upsert(uint8_t err, uint8_t channel, uint8_t comma
 static bool pdu_can_send_error_detail_frame(uint8_t slot)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
     pdu_error_detail_t *entry;
 
     if (slot >= PDU_ERROR_DETAIL_MAX)
@@ -2859,12 +2732,7 @@ static bool pdu_can_send_error_detail_frame(uint8_t slot)
 
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -2890,7 +2758,7 @@ static bool pdu_can_send_error_detail_frame(uint8_t slot)
     tx.data[6] = 0U;
     tx.data[7] = 0U;
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static bool pdu_i2c_scan_addr_present(uint8_t addr)
@@ -2970,7 +2838,6 @@ static void pdu_i2c_scan_update(void)
 static bool pdu_can_send_i2c_scan_frame(uint8_t slot)
 {
     CAN_TX_BUFFER tx = { 0 };
-    uint32_t wait_count = 0UL;
     uint8_t base_addr;
 
     if (slot >= pdu_i2c_scan_frame_count)
@@ -2980,12 +2847,7 @@ static bool pdu_can_send_i2c_scan_frame(uint8_t slot)
 
     (void)pdu_can_recover_if_needed();
 
-    while ((CAN1_TxFifoFreeLevelGet() == 0U) && (wait_count < PDU_CAN_TX_WAIT_LOOPS))
-    {
-        wait_count++;
-    }
-
-    if (CAN1_TxFifoFreeLevelGet() == 0U)
+    if (!pdu_can_tx_fifo_ready())
     {
         return false;
     }
@@ -3011,7 +2873,7 @@ static bool pdu_can_send_i2c_scan_frame(uint8_t slot)
     tx.data[6] = pdu_i2c_scan_frame_count;
     tx.data[7] = pdu_get_i2c_scan_flags();
 
-    return CAN1_MessageTransmitFifo(1U, &tx);
+    return CAN0_MessageTransmitFifo(1U, &tx);
 }
 
 static void pdu_i2c_scan_report_send_all(void)
@@ -3043,8 +2905,7 @@ static void pdu_i2c_scan_report_if_needed(void)
     }
 
     if ((pdu_i2c_scan_frame_count != pdu_i2c_scan_frame_count_last) ||
-        (pdu_i2c_scan_mode != pdu_i2c_scan_mode_last) ||
-        (pdu_hybrid_only_mode != pdu_hybrid_only_mode_last))
+        (pdu_i2c_scan_mode != pdu_i2c_scan_mode_last))
     {
         changed = true;
     }
@@ -3062,7 +2923,6 @@ static void pdu_i2c_scan_report_if_needed(void)
         pdu_i2c_scan_found_last = pdu_i2c_scan_found;
         pdu_i2c_scan_frame_count_last = pdu_i2c_scan_frame_count;
         pdu_i2c_scan_mode_last = pdu_i2c_scan_mode;
-        pdu_hybrid_only_mode_last = pdu_hybrid_only_mode;
     }
 }
 
@@ -3115,7 +2975,7 @@ void PDU_Init(void)
     /* Force-enable all GPIO output enable pins (active-high) */
     pdu_enable_all_gpio_outputs();
 
-    CAN1_RxFifoCallbackRegister(CAN_RX_FIFO_0, pdu_can_rx_fifo_callback, 0U);
+    CAN0_RxFifoCallbackRegister(CAN_RX_FIFO_0, pdu_can_rx_fifo_callback, 0U);
     TC0_TimerCallbackRegister(pdu_tc0_timer_callback, 0U);
     TC0_TimerStart();
 
@@ -3167,8 +3027,7 @@ void PDU_Init(void)
     pdu_last_error = 0U;
     pdu_fail_channel = 0xFFU;
     pdu_fail_command = 0U;
-    pdu_hybrid_only_mode = false;
-    pdu_hybrid_only_mode_last = false;
+    /* hybrid-only mode removed */
     pdu_i2c_scan_mode = PDU_I2C_SCAN_MODE_EFUSE;
     pdu_i2c_scan_mode_last = 0xFFU;
     pdu_update_i2c_scan_range();
@@ -3237,7 +3096,7 @@ void PDU_Service(void)
         run_control = true;
     }
 
-    if (pdu_telemetry_service_pending)
+    if (pdu_telemetry_service_pending && !pdu_telemetry_busy)
     {
         pdu_telemetry_service_pending = false;
         run_telemetry = true;
@@ -3271,6 +3130,7 @@ void PDU_PollAndSendTelemetry(void)
 
     uint8_t err_flags = 0U;
 
+    pdu_telemetry_busy = true;
     pdu_debug_stage = PDU_STAGE_TELEMETRY;
     pdu_error_age();
     pdu_error_details_age();
@@ -3668,4 +3528,6 @@ void PDU_PollAndSendTelemetry(void)
             pdu_debug_ttl_polls--;
         }
     }
+
+    pdu_telemetry_busy = false;
 }

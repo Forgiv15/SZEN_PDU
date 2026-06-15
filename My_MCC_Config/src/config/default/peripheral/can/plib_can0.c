@@ -62,10 +62,43 @@
 
 static volatile CAN_TX_FIFO_CALLBACK_OBJ can0TxFifoCallbackObj;
 static volatile CAN_TX_EVENT_FIFO_CALLBACK_OBJ can0TxEventFifoCallbackObj;
-static volatile CAN_TXRX_BUFFERS_CALLBACK_OBJ can0RxBufferCallbackObj;
 static volatile CAN_RX_FIFO_CALLBACK_OBJ can0RxFifoCallbackObj[2];
 static volatile CAN_CALLBACK_OBJ can0CallbackObj;
 static volatile CAN_OBJ can0Obj;
+
+static const can_sidfe_registers_t can0StdFilter[] =
+{
+    {
+        .CAN_SIDFE_0 = CAN_SIDFE_0_SFT(0UL) |
+                  CAN_SIDFE_0_SFID1(0x79UL) |
+                  CAN_SIDFE_0_SFID2(0x81UL) |
+                  CAN_SIDFE_0_SFEC(1UL)
+    },
+    {
+        .CAN_SIDFE_0 = CAN_SIDFE_0_SFT(0UL) |
+                  CAN_SIDFE_0_SFID1(0x199UL) |
+                  CAN_SIDFE_0_SFID2(0x201UL) |
+                  CAN_SIDFE_0_SFEC(1UL)
+    },
+    {
+        .CAN_SIDFE_0 = CAN_SIDFE_0_SFT(0UL) |
+                  CAN_SIDFE_0_SFID1(0x0UL) |
+                  CAN_SIDFE_0_SFID2(0x78UL) |
+                  CAN_SIDFE_0_SFEC(3UL)
+    },
+    {
+        .CAN_SIDFE_0 = CAN_SIDFE_0_SFT(0UL) |
+                  CAN_SIDFE_0_SFID1(0x81UL) |
+                  CAN_SIDFE_0_SFID2(0x198UL) |
+                  CAN_SIDFE_0_SFEC(3UL)
+    },
+    {
+        .CAN_SIDFE_0 = CAN_SIDFE_0_SFT(0UL) |
+                  CAN_SIDFE_0_SFID1(0x202UL) |
+                  CAN_SIDFE_0_SFID2(0x7ffUL) |
+                  CAN_SIDFE_0_SFEC(3UL)
+    },
+};
 
 static inline void CAN0_ZeroInitialize(volatile void* pData, size_t dataSize)
 {
@@ -112,14 +145,9 @@ void CAN0_Initialize(void)
     /* Set Nominal Bit timing and Prescaler Register */
     CAN0_REGS->CAN_NBTP  = CAN_NBTP_NTSEG2(23UL) | CAN_NBTP_NTSEG1(70UL) | CAN_NBTP_NBRP(0UL) | CAN_NBTP_NSJW(23UL);
 
-    /*lint -e{9048} PC lint incorrectly reports a missing 'U' Suffix */
-    CAN0_REGS->CAN_NDAT1 = CAN_NDAT1_Msk;
-    /*lint -e{9048} PC lint incorrectly reports a missing 'U' Suffix */
-    CAN0_REGS->CAN_NDAT2 = CAN_NDAT2_Msk;
-
 
     /* Global Filter Configuration Register */
-    CAN0_REGS->CAN_GFC = CAN_GFC_ANFS_REJECT | CAN_GFC_ANFE_REJECT;
+    CAN0_REGS->CAN_GFC = CAN_GFC_ANFS_REJECT | CAN_GFC_ANFE_REJECT | CAN_GFC_RRFS_Msk | CAN_GFC_RRFE_Msk;
 
     /* Set the operation mode */
 
@@ -143,7 +171,7 @@ void CAN0_Initialize(void)
                                        | CAN_IE_TEFNE_Msk | CAN_IE_TEFLE_Msk | CAN_IE_TEFFE_Msk | CAN_IE_TCFE_Msk | CAN_IE_HPME_Msk
                                        | CAN_IE_RF0NE_Msk | CAN_IE_RF0LE_Msk | CAN_IE_RF0FE_Msk
                                        | CAN_IE_RF1NE_Msk | CAN_IE_RF1LE_Msk | CAN_IE_RF1FE_Msk
-                                       | CAN_IE_DRXE_Msk
+                                      
                                       | CAN_IE_MRAFE_Msk;
 
     CAN0_ZeroInitialize(&can0Obj.msgRAMConfig, sizeof(CAN_MSG_RAM_CONFIG));
@@ -178,7 +206,7 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
     uint8_t  count = 0U;
     bool transmitFifo_event = false;
 
-    if (!(((numberOfMessage < 1U) || (numberOfMessage > 16U)) || (txBuffer == NULL)))
+    if (!(((numberOfMessage < 1U) || (numberOfMessage > 32U)) || (txBuffer == NULL)))
     {
         tfqpi = (uint8_t)((CAN0_REGS->CAN_TXFQS & CAN_TXFQS_TFQPI_Msk) >> CAN_TXFQS_TFQPI_Pos);
 
@@ -191,7 +219,7 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer)
             txBuf += CAN0_TX_FIFO_BUFFER_ELEMENT_SIZE;
             bufferNumber |= (1UL << tfqpi);
             tfqpi++;
-            if (tfqpi == 16U)
+            if (tfqpi == 32U)
             {
                 tfqpi = 0U;
             }
@@ -293,7 +321,7 @@ bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFif
             }
             txEvtFifo += sizeof(CAN_TX_EVENT_FIFO);
             txefgi++;
-            if (txefgi == 16U)
+            if (txefgi == 32U)
             {
                 txefgi = 0U;
             }
@@ -307,42 +335,6 @@ bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFif
     return txFifo_event;
 }
 
-// *****************************************************************************
-/* Function:
-    bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer)
-
-   Summary:
-    Read a message from the specific Rx Buffer.
-
-   Precondition:
-    CAN0_Initialize must have been called for the associated CAN instance.
-
-   Parameters:
-    bufferNumber - Rx buffer number
-    rxBuffer     - Pointer to Rx buffer
-
-   Returns:
-    Request status.
-    true  - Request was successful.
-    false - Request has failed.
-*/
-bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer)
-{
-    uint8_t *rxBuf = NULL;
-    bool message_receive_event = false;
-
-    if((rxBuffer != NULL) && (bufferNumber < 16U))
-    {
-        rxBuf = (uint8_t *) ((uint8_t *)can0Obj.msgRAMConfig.rxBuffersAddress + ((uint32_t)bufferNumber * CAN0_RX_BUFFER_ELEMENT_SIZE));
-
-        (void)memcpy((uint8_t *)rxBuffer, rxBuf, CAN0_RX_BUFFER_ELEMENT_SIZE);
-
-        /* Clear new data flag */
-        CAN0_REGS->CAN_NDAT1 = (1UL << bufferNumber);
-        message_receive_event = true;
-    }
-    return message_receive_event;
-}
 
 // *****************************************************************************
 /* Function:
@@ -543,21 +535,26 @@ void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
     CAN0_REGS->CAN_RXF1C = CAN_RXF1C_F1S(16UL) | CAN_RXF1C_F1WM(0UL) | CAN_RXF1C_F1OM_Msk |
             CAN_RXF1C_F1SA((uint32_t)can0Obj.msgRAMConfig.rxFIFO1Address);
 
-    can0Obj.msgRAMConfig.rxBuffersAddress = (can_rxbe_registers_t *)(msgRAMConfigBaseAddr + offset);
-    offset += CAN0_RX_BUFFER_SIZE;
-    CAN0_REGS->CAN_RXBC = CAN_RXBC_RBSA((uint32_t)can0Obj.msgRAMConfig.rxBuffersAddress);
-
     can0Obj.msgRAMConfig.txBuffersAddress = (can_txbe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_TX_FIFO_BUFFER_SIZE;
     /* Transmit Buffer/FIFO Configuration Register */
-    CAN0_REGS->CAN_TXBC = CAN_TXBC_TFQS(16UL) |
+    CAN0_REGS->CAN_TXBC = CAN_TXBC_TFQS(32UL) |
             CAN_TXBC_TBSA((uint32_t)can0Obj.msgRAMConfig.txBuffersAddress);
 
     can0Obj.msgRAMConfig.txEventFIFOAddress =  (can_txefe_registers_t *)(msgRAMConfigBaseAddr + offset);
     offset += CAN0_TX_EVENT_FIFO_SIZE;
     /* Transmit Event FIFO Configuration Register */
-    CAN0_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(16UL) |
+    CAN0_REGS->CAN_TXEFC = CAN_TXEFC_EFWM(0UL) | CAN_TXEFC_EFS(32UL) |
             CAN_TXEFC_EFSA((uint32_t)can0Obj.msgRAMConfig.txEventFIFOAddress);
+
+    can0Obj.msgRAMConfig.stdMsgIDFilterAddress = (can_sidfe_registers_t *)(msgRAMConfigBaseAddr + offset);
+    (void) memcpy((void*)can0Obj.msgRAMConfig.stdMsgIDFilterAddress,
+           (const void*)can0StdFilter,
+           CAN0_STD_MSG_ID_FILTER_SIZE);
+    offset += CAN0_STD_MSG_ID_FILTER_SIZE;
+    /* Standard ID Filter Configuration Register */
+    CAN0_REGS->CAN_SIDFC = CAN_SIDFC_LSS(5UL) |
+            CAN_SIDFC_FLSSA((uint32_t)can0Obj.msgRAMConfig.stdMsgIDFilterAddress);
 
 
     /* Reference offset variable once to remove warning about the variable not being used after increment */
@@ -573,6 +570,67 @@ void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress)
 /* MISRAC 2012 deviation block end for Rule 11.3*/
 
 
+// *****************************************************************************
+/* Function:
+    bool CAN0_StandardFilterElementSet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement)
+
+   Summary:
+    Set a standard filter element configuration.
+
+   Precondition:
+    CAN0_Initialize and CAN0_MessageRAMConfigSet must have been called
+    for the associated CAN instance.
+
+   Parameters:
+    filterNumber          - Standard Filter number to be configured.
+    stdMsgIDFilterElement - Pointer to Standard Filter Element configuration to be set on specific filterNumber.
+
+   Returns:
+    Request status.
+    true  - Request was successful.
+    false - Request has failed.
+*/
+bool CAN0_StandardFilterElementSet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement)
+{
+    bool retval = false;
+    if (!((filterNumber > 5U) || (stdMsgIDFilterElement == NULL)))
+    {
+        can0Obj.msgRAMConfig.stdMsgIDFilterAddress[filterNumber - 1U].CAN_SIDFE_0 = stdMsgIDFilterElement->CAN_SIDFE_0;
+        retval = true;
+    }
+    return retval;
+}
+
+// *****************************************************************************
+/* Function:
+    bool CAN0_StandardFilterElementGet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement)
+
+   Summary:
+    Get a standard filter element configuration.
+
+   Precondition:
+    CAN0_Initialize and CAN0_MessageRAMConfigSet must have been called
+    for the associated CAN instance.
+
+   Parameters:
+    filterNumber          - Standard Filter number to get filter configuration.
+    stdMsgIDFilterElement - Pointer to Standard Filter Element configuration for storing filter configuration.
+
+   Returns:
+    Request status.
+    true  - Request was successful.
+    false - Request has failed.
+*/
+bool CAN0_StandardFilterElementGet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement)
+{
+    bool retval = false;
+    if (!((filterNumber > 5U) || (stdMsgIDFilterElement == NULL)))
+    {
+        stdMsgIDFilterElement->CAN_SIDFE_0 = can0Obj.msgRAMConfig.stdMsgIDFilterAddress[filterNumber - 1U].CAN_SIDFE_0;
+        retval = true;
+    }
+    return retval;
+}
 
 
 void CAN0_SleepModeEnter(void)
@@ -744,35 +802,6 @@ void CAN0_TxEventFifoCallbackRegister(CAN_TX_EVENT_FIFO_CALLBACK callback, uintp
     }
 }
 
-// *****************************************************************************
-/* Function:
-    void CAN0_RxBuffersCallbackRegister(CAN_TXRX_BUFFERS_CALLBACK callback, uintptr_t contextHandle)
-
-   Summary:
-    Sets the pointer to the function (and it's context) to be called when the
-    given CAN's transfer events occur.
-
-   Precondition:
-    CAN0_Initialize must have been called for the associated CAN instance.
-
-   Parameters:
-    callback - A pointer to a function with a calling signature defined
-    by the CAN_TXRX_BUFFERS_CALLBACK data type.
-
-    contextHandle - A value (usually a pointer) passed (unused) into the function
-    identified by the callback parameter.
-
-   Returns:
-    None.
-*/
-void CAN0_RxBuffersCallbackRegister(CAN_TXRX_BUFFERS_CALLBACK callback, uintptr_t contextHandle)
-{
-    if (callback != NULL)
-    {
-        can0RxBufferCallbackObj.callback = callback;
-        can0RxBufferCallbackObj.context = contextHandle;
-    }
-}
 
 // *****************************************************************************
 /* Function:
@@ -863,8 +892,6 @@ void CAN0_CallbackRegister(CAN_CALLBACK callback, uintptr_t contextHandle)
 */
 void __attribute__((used)) CAN0_InterruptHandler(void)
 {
-    uint32_t newData1 = 0U;
-    uint8_t bufferNumber = 0U;
     uint8_t numberOfMessage = 0;
     uint8_t numberOfTxEvent = 0;
 
@@ -873,9 +900,9 @@ void __attribute__((used)) CAN0_InterruptHandler(void)
     /* Additional temporary variable used to prevent MISRA violations (Rule 13.x) */
     uintptr_t context;
 
-    if ((ir & (~(CAN_IR_RF0N_Msk | CAN_IR_RF1N_Msk | CAN_IR_DRX_Msk | CAN_IR_TFE_Msk | CAN_IR_TEFN_Msk))) != 0U)
+    if ((ir & (~(CAN_IR_RF0N_Msk | CAN_IR_RF1N_Msk | CAN_IR_TFE_Msk | CAN_IR_TEFN_Msk))) != 0U)
     {
-        CAN0_REGS->CAN_IR = (ir & (~(CAN_IR_RF0N_Msk | CAN_IR_RF1N_Msk | CAN_IR_DRX_Msk | CAN_IR_TFE_Msk | CAN_IR_TEFN_Msk)));
+        CAN0_REGS->CAN_IR = (ir & (~(CAN_IR_RF0N_Msk | CAN_IR_RF1N_Msk | CAN_IR_TFE_Msk | CAN_IR_TEFN_Msk)));
         if (can0CallbackObj.callback != NULL)
         {
             context = can0CallbackObj.context;
@@ -906,27 +933,6 @@ void __attribute__((used)) CAN0_InterruptHandler(void)
         {
             context = can0RxFifoCallbackObj[CAN_RX_FIFO_1].context;
             can0RxFifoCallbackObj[CAN_RX_FIFO_1].callback(numberOfMessage, context);
-        }
-    }
-    /* New Message in Dedicated Rx Buffer */
-    if ((ir & CAN_IR_DRX_Msk) != 0U)
-    {
-        CAN0_REGS->CAN_IR = CAN_IR_DRX_Msk;
-
-        newData1 = CAN0_REGS->CAN_NDAT1;
-        if (newData1 != 0U)
-        {
-            for (bufferNumber = 0U; bufferNumber < 16U; bufferNumber++)
-            {
-                if ((newData1 & (1UL << bufferNumber)) == (1UL << bufferNumber))
-                {
-                    if (can0RxBufferCallbackObj.callback != NULL)
-                    {
-                        context = can0RxBufferCallbackObj.context;
-                        can0RxBufferCallbackObj.callback(bufferNumber, context);
-                    }
-                }
-            }
         }
     }
 

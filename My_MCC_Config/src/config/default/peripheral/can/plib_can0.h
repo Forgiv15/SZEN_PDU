@@ -80,15 +80,14 @@
 #define CAN0_RX_FIFO0_SIZE               256U
 #define CAN0_RX_FIFO1_ELEMENT_SIZE       16U
 #define CAN0_RX_FIFO1_SIZE               256U
-#define CAN0_RX_BUFFER_ELEMENT_SIZE      16U
-#define CAN0_RX_BUFFER_SIZE              256U
 #define CAN0_TX_FIFO_BUFFER_ELEMENT_SIZE 16U
-#define CAN0_TX_FIFO_BUFFER_SIZE         256U
-#define CAN0_TX_EVENT_FIFO_SIZE          128U
+#define CAN0_TX_FIFO_BUFFER_SIZE         512U
+#define CAN0_TX_EVENT_FIFO_SIZE          256U
+#define CAN0_STD_MSG_ID_FILTER_SIZE      20U
 
 /* CAN0_MESSAGE_RAM_CONFIG_SIZE to be used by application or driver
    for allocating buffer from non-cached contiguous memory */
-#define CAN0_MESSAGE_RAM_CONFIG_SIZE     1152U
+#define CAN0_MESSAGE_RAM_CONFIG_SIZE     1300U
 
 // *****************************************************************************
 // *****************************************************************************
@@ -100,18 +99,18 @@ bool CAN0_MessageTransmitFifo(uint8_t numberOfMessage, CAN_TX_BUFFER *txBuffer);
 uint8_t CAN0_TxFifoFreeLevelGet(void);
 bool CAN0_TxBufferIsBusy(uint8_t bufferNumber);
 bool CAN0_TxEventFifoRead(uint8_t numberOfTxEvent, CAN_TX_EVENT_FIFO *txEventFifo);
-bool CAN0_MessageReceive(uint8_t bufferNumber, CAN_RX_BUFFER *rxBuffer);
 bool CAN0_MessageReceiveFifo(CAN_RX_FIFO_NUM rxFifoNum, uint8_t numberOfMessage, CAN_RX_BUFFER *rxBuffer);
 CAN_ERROR CAN0_ErrorGet(void);
 void CAN0_ErrorCountGet(uint8_t *txErrorCount, uint8_t *rxErrorCount);
 void CAN0_MessageRAMConfigSet(uint8_t *msgRAMConfigBaseAddress);
+bool CAN0_StandardFilterElementSet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement);
+bool CAN0_StandardFilterElementGet(uint8_t filterNumber, can_sidfe_registers_t *stdMsgIDFilterElement);
 void CAN0_SleepModeEnter(void);
 void CAN0_SleepModeExit(void);
 bool CAN0_BitTimingCalculationGet(CAN_BIT_TIMING_SETUP *setup, CAN_BIT_TIMING *bitTiming);
 bool CAN0_BitTimingSet(CAN_BIT_TIMING *bitTiming);
 void CAN0_TxFifoCallbackRegister(CAN_TX_FIFO_CALLBACK callback, uintptr_t contextHandle);
 void CAN0_TxEventFifoCallbackRegister(CAN_TX_EVENT_FIFO_CALLBACK callback, uintptr_t contextHandle);
-void CAN0_RxBuffersCallbackRegister(CAN_TXRX_BUFFERS_CALLBACK callback, uintptr_t contextHandle);
 void CAN0_RxFifoCallbackRegister(CAN_RX_FIFO_NUM rxFifoNum, CAN_RX_FIFO_CALLBACK callback, uintptr_t contextHandle);
 void CAN0_CallbackRegister(CAN_CALLBACK callback, uintptr_t contextHandle);
 // DOM-IGNORE-BEGIN

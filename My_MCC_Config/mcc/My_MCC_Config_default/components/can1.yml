@@ -208,7 +208,7 @@ data:
       children:
       - children:
         - attributes:
-            value: '6'
+            value: '32'
           type: User
         type: Values
       type: Integer
@@ -474,7 +474,7 @@ data:
       children:
       - children:
         - attributes:
-            value: 'true'
+            value: 'false'
           type: User
         type: Values
       type: Boolean

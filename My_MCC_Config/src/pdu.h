@@ -27,9 +27,9 @@ typedef enum
 #define PDU_NUM_EFUSES  8U
 
 /**
- * @brief Initialize CAN1 runtime resources for PDU telemetry
+ * @brief Initialize CAN0 runtime resources for PDU telemetry
  *
- * Must be called once after CAN1_Initialize().
+ * Must be called once after CAN0_Initialize().
  */
 void PDU_CAN_Init(void);
 
