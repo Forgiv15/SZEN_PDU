@@ -14,6 +14,7 @@
 /* Aggregated control/telemetry IDs */
 #define PDU_CAN_ID_CONTROL_MASK     0x080U
 #define PDU_CAN_ID_INPUT8_STATUS    0x085U
+#define PDU_CAN_ID_REINIT_STATUS    0x086U  /* per-ch reinit counters */
 #define PDU_CAN_ID_CONTROL          0x200U
 #define PDU_CAN_ID_TELEM_SUMMARY    0x700U
 #define PDU_CAN_ID_TELEM_EXTRA      0x701U
@@ -35,6 +36,7 @@
 #define PDU_CAN_ID_PMBUS_STATS      0x793U
 #define PDU_CAN_ID_EFUSE_STATUS_BASE  0x780U  /* 0x780-0x787 extended status */
 #define PDU_CAN_ID_EFUSE_MFR2_BASE    0x788U  /* 0x788-0x78F MFR2 status */
+#define PDU_CAN_ID_VERIFY_DETAIL_BASE 0x7A0U  /* 0x7A0-0x7A7 per-ch register-readback */
 #define PDU_ECU_RAW_FLAG_SEEN       (1U << 0)
 #define PDU_ECU_RAW_FLAG_FRESH      (1U << 1)
 #define PDU_ECU_RAW_FLAG_BYTE1      (1U << 2)
@@ -82,6 +84,7 @@
 #define PDU_CONTROL_OP_ADC_REF       0x04U
 #define PDU_CONTROL_OP_HYBRID_ONLY   0x05U
 #define PDU_CONTROL_OP_I2C_SCAN_MODE 0x06U
+#define PDU_CONTROL_OP_REINIT_EFUSE  0x0AU  /* force re-init of one or all eFuses */
 #define PDU_CONTROL_OP_NOP           0x00U
 #define PDU_OVERRIDE_FLAG_ARMED      (1U << 0)
 #define PDU_OVERRIDE_FLAG_START_ON   (1U << 1)
@@ -161,6 +164,8 @@
 
 static bool pdu_efuse_powered[PDU_NUM_EFUSES];
 static bool pdu_efuse_init_done[PDU_NUM_EFUSES];
+static bool pdu_efuse_needs_reinit[PDU_NUM_EFUSES];  /* lost power, needs re-init */
+static uint16_t pdu_efuse_reinit_count[PDU_NUM_EFUSES];  /* re-init counter */
 static bool pdu_init_pending = false;
 
 /* TPS25990 PMBus I2C addresses for each eFuse channel */
@@ -274,6 +279,11 @@ static bool pdu_applied_other_fused_enabled = false;
 static bool pdu_retry_mode_applied = false;
 static uint8_t pdu_reg_verify_ok_mask = 0U;
 static uint8_t pdu_reg_verify_fail_mask = 0U;
+static uint16_t pdu_verify_vin_uv_flt[PDU_NUM_EFUSES];
+static uint16_t pdu_verify_device_config[PDU_NUM_EFUSES];
+static uint8_t  pdu_verify_retry_config[PDU_NUM_EFUSES];
+static uint8_t  pdu_verify_oc_timer[PDU_NUM_EFUSES];
+static uint8_t  pdu_verify_viref[PDU_NUM_EFUSES];
 static volatile uint32_t pdu_pmbus_sweep_count = 0U;
 static volatile uint32_t pdu_pmbus_sweep_start_ms = 0U;
 static volatile uint16_t pdu_pmbus_sweeps_per_sec = 0U;
@@ -469,12 +479,44 @@ static bool pdu_init_single_efuse(uint8_t channel)
 
     pdu_reg_verify_ok_mask |= (uint8_t)(1U << channel);
     pdu_efuse_init_done[channel] = true;
+    pdu_efuse_needs_reinit[channel] = false;
+    pdu_efuse_reinit_count[channel]++;
     return true;
 
 fail:
     (void)tps25990_lock_writes(tps_addr[channel]);
     pdu_reg_verify_fail_mask |= (uint8_t)(1U << channel);
     return false;
+}
+
+/* ── Service any eFuse that dropped out and came back ── */
+static void pdu_service_efuse_reinit(void)
+{
+    uint8_t ch;
+
+    for (ch = 0U; ch < PDU_NUM_EFUSES; ch++)
+    {
+        if (!pdu_efuse_needs_reinit[ch])
+        {
+            continue;
+        }
+        if (!pdu_pmbus_channel_allowed(ch))
+        {
+            continue;
+        }
+
+        /* Quick I2C ping — if power is back, re-initialise */
+        if (pdu_i2c_ping(tps_addr[ch]))
+        {
+            pdu_efuse_powered[ch] = true;
+            if (pdu_init_single_efuse(ch))
+            {
+                (void)tps25990_clear_faults(tps_addr[ch]);
+                (void)pdu_apply_efuse_state(ch, true);
+                pdu_init_pending = true;
+            }
+        }
+    }
 }
 
 /* ── Service relay-powered channels: detect power-up, init on first response ── */
@@ -1497,6 +1539,7 @@ static bool pdu_apply_retry_mode(void)
             all_ok = false;
             continue;
         }
+        pdu_verify_device_config[channel] = verify_device_config;
 
         if (!tps25990_read_retry_config(tps_addr[channel], &verify_retry_config))
         {
@@ -1504,6 +1547,7 @@ static bool pdu_apply_retry_mode(void)
             all_ok = false;
             continue;
         }
+        pdu_verify_retry_config[channel] = verify_retry_config;
 
         if (!tps25990_read_oc_timer(tps_addr[channel], &verify_oc_timer))
         {
@@ -1511,6 +1555,7 @@ static bool pdu_apply_retry_mode(void)
             all_ok = false;
             continue;
         }
+        pdu_verify_oc_timer[channel] = verify_oc_timer;
 
         if (!tps25990_read_viref(tps_addr[channel], &verify_viref))
         {
@@ -1518,6 +1563,7 @@ static bool pdu_apply_retry_mode(void)
             all_ok = false;
             continue;
         }
+        pdu_verify_viref[channel] = verify_viref;
 
         if (!tps25990_read_vin_uv_flt(tps_addr[channel], &verify_vin_uv_flt))
         {
@@ -1525,6 +1571,7 @@ static bool pdu_apply_retry_mode(void)
             all_ok = false;
             continue;
         }
+        pdu_verify_vin_uv_flt[channel] = verify_vin_uv_flt;
 
         if (!tps25990_read_vin_uv_warn(tps_addr[channel], &verify_vin_uv_warn))
         {
@@ -1748,6 +1795,14 @@ static void pdu_process_control_can(void)
                         pdu_apply_resolved_gpio_outputs();
                         pdu_output_apply_pending = true;
                         pdu_control_service_pending = true;
+                        break;
+                    case PDU_CONTROL_OP_REINIT_EFUSE:
+                        pdu_pending_control_opcode = rx.data[2];
+                        pdu_pending_control_param0 = rx.data[3];
+                        pdu_pending_control_param1 = rx.data[4];
+                        pdu_pending_control_valid = true;
+                        pdu_control_service_pending = true;
+                        break;
                     default:
                         break;
                 }
@@ -1830,6 +1885,27 @@ static void pdu_handle_pending_control_command(void)
             pdu_i2c_scan_report_div = 10U;
             break;
 
+        case PDU_CONTROL_OP_REINIT_EFUSE:
+            if (param0 == PDU_FAULT_TARGET_ALL)
+            {
+                uint8_t rch;
+                for (rch = 0U; rch < PDU_NUM_EFUSES; rch++)
+                {
+                    if (pdu_pmbus_channel_allowed(rch) && pdu_efuse_powered[rch])
+                    {
+                        pdu_efuse_needs_reinit[rch] = true;
+                    }
+                }
+            }
+            else if (param0 < PDU_NUM_EFUSES)
+            {
+                if (pdu_pmbus_channel_allowed(param0) && pdu_efuse_powered[param0])
+                {
+                    pdu_efuse_needs_reinit[param0] = true;
+                }
+            }
+            break;
+
         default:
             break;
     }
@@ -1846,6 +1922,9 @@ static void pdu_service_control_100hz(void)
 
     /* ── Relay-powered eFuse detection: check at 100 Hz ── */
     pdu_service_relay_channels();
+
+    /* ── Auto-reinit any eFuse that lost power and came back ── */
+    pdu_service_efuse_reinit();
 
     en_ok = pdu_apply_requested_states(false);
     pdu_output_apply_pending = false;
@@ -2249,6 +2328,85 @@ static bool pdu_can_send_ext_status_frame(uint16_t id, uint16_t status_word,
     tx.data[5] = status_cml;
     tx.data[6] = status_mfr;
     tx.data[7] = status_out;
+
+    return CAN0_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_verify_detail_frame(uint8_t channel)
+{
+    CAN_TX_BUFFER tx = { 0 };
+
+    if (channel >= PDU_NUM_EFUSES)
+    {
+        return false;
+    }
+
+    (void)pdu_can_recover_if_needed();
+
+    if (!pdu_can_tx_fifo_ready())
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode((uint16_t)(PDU_CAN_ID_VERIFY_DETAIL_BASE + channel));
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    /* Byte 0-1: VIN_UV_FLT readback — the UV fault threshold in Linear11 format.
+     * 0x0000 = 0 V, effectively disabled. */
+    tx.data[0] = (uint8_t)(pdu_verify_vin_uv_flt[channel] & 0xFFU);
+    tx.data[1] = (uint8_t)((pdu_verify_vin_uv_flt[channel] >> 8) & 0xFFU);
+    /* Byte 2: OC_TIMER readback */
+    tx.data[2] = pdu_verify_oc_timer[channel];
+    /* Byte 3: VIREF readback */
+    tx.data[3] = pdu_verify_viref[channel];
+    /* Byte 4-5: DEVICE_CONFIG readback (low 16 bits of 16-bit value) */
+    tx.data[4] = (uint8_t)(pdu_verify_device_config[channel] & 0xFFU);
+    tx.data[5] = (uint8_t)((pdu_verify_device_config[channel] >> 8) & 0xFFU);
+    /* Byte 6: RETRY_CONFIG readback */
+    tx.data[6] = pdu_verify_retry_config[channel];
+    /* Byte 7: flags — bit0=verified_ok, bit1=verify_failed */
+    tx.data[7] = 0U;
+    if ((pdu_reg_verify_ok_mask >> channel) & 1U)  { tx.data[7] |= (uint8_t)(1U << 0); }
+    if ((pdu_reg_verify_fail_mask >> channel) & 1U) { tx.data[7] |= (uint8_t)(1U << 1); }
+
+    return CAN0_MessageTransmitFifo(1U, &tx);
+}
+
+static bool pdu_can_send_reinit_status_frame(void)
+{
+    CAN_TX_BUFFER tx = { 0 };
+    uint8_t ch;
+
+    (void)pdu_can_recover_if_needed();
+
+    if (!pdu_can_tx_fifo_ready())
+    {
+        return false;
+    }
+
+    tx.id = pdu_can_std_id_encode(PDU_CAN_ID_REINIT_STATUS);
+    tx.rtr = 0U;
+    tx.xtd = 0U;
+    tx.esi = 0U;
+    tx.dlc = 8U;
+    tx.brs = 0U;
+    tx.fdf = 0U;
+    tx.efc = 0U;
+    tx.mm = 0U;
+
+    /* One byte per channel: number of times this eFuse was re‑initialised
+     * since power‑on (saturates at 255). */
+    for (ch = 0U; ch < PDU_NUM_EFUSES && ch < 8U; ch++)
+    {
+        tx.data[ch] = (uint8_t)((pdu_efuse_reinit_count[ch] > 255U) ? 255U : pdu_efuse_reinit_count[ch]);
+    }
 
     return CAN0_MessageTransmitFifo(1U, &tx);
 }
@@ -3083,6 +3241,9 @@ void PDU_Init(void)
     (void)pdu_can_send_reg_verify_frame(pdu_reg_verify_ok_mask, pdu_reg_verify_fail_mask);
 
     (void)pdu_apply_requested_states(true);
+
+    /* Send initial reinit counters (all zero) */
+    (void)pdu_can_send_reinit_status_frame();
 }
 
 void PDU_Service(void)
@@ -3242,10 +3403,8 @@ void PDU_PollAndSendTelemetry(void)
                     (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_IN, &sin_raw);
                     (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_MFR, &smfr_raw);
                     (void)pmbus_read_byte(tps_addr[i], TPS25990_CMD_STATUS_VOUT, &sout_raw);
-                    if (pdu_debug_ttl_polls > 0U)
-                    {
-                        (void)pmbus_read_word(tps_addr[i], TPS25990_CMD_STATUS_MFR_SPECIFIC_2, &mfr2_raw);
-                    }
+                    /* Always read MFR2 so SPFAIL/SC_FLT/OC_DET/EIN_OF_WARN/VIN_TRAN are always visible */
+                    (void)pmbus_read_word(tps_addr[i], TPS25990_CMD_STATUS_MFR_SPECIFIC_2, &mfr2_raw);
                 }
             }
         }
@@ -3299,6 +3458,17 @@ void PDU_PollAndSendTelemetry(void)
         else if (pdu_pmbus_channel_allowed(i))
         {
             pdu_note_pmbus_error(st, i, failed_cmd);
+
+            /* Power-loss detection: if a previously‑powered eFuse NACKs
+             * (e.g. cold‑crank drop below 5 V), flag it for auto‑reinit.
+             * The control loop will ping it at 100 Hz and re‑init when
+             * it comes back. */
+            if (pdu_efuse_powered[i] && (st == PMBUS_NACK))
+            {
+                pdu_efuse_powered[i] = false;
+                pdu_efuse_init_done[i] = false;
+                pdu_efuse_needs_reinit[i] = true;
+            }
         }
 
         if (!pdu_can_send_efuse_frame((uint16_t)(PDU_CAN_ID_EFUSE_BASE + i), mv, ma, p_10mw, status)) {
@@ -3319,13 +3489,16 @@ void PDU_PollAndSendTelemetry(void)
             pdu_error_set(PDU_ERR_CAN_TX_FAIL);
         }
 
-        if (pdu_debug_ttl_polls > 0U)
+        /* ── MFR2 status frame (0x788-0x78F) – always sent ── */
+        if (!pdu_can_send_mfr2_frame((uint16_t)(PDU_CAN_ID_EFUSE_MFR2_BASE + i), mfr2_raw))
         {
-            /* ── MFR2 status frame (0x788-0x78F) – debug only ── */
-            if (!pdu_can_send_mfr2_frame((uint16_t)(PDU_CAN_ID_EFUSE_MFR2_BASE + i), mfr2_raw))
-            {
-                pdu_error_set(PDU_ERR_CAN_TX_FAIL);
-            }
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
+        }
+
+        /* ── Register verify detail (0x7A0-0x7A7) – always sent ── */
+        if (!pdu_can_send_verify_detail_frame(i))
+        {
+            pdu_error_set(PDU_ERR_CAN_TX_FAIL);
         }
 
         if (pdu_debug_ttl_polls > 0U)
@@ -3462,6 +3635,22 @@ void PDU_PollAndSendTelemetry(void)
     {
         pdu_error_set(PDU_ERR_CAN_TX_FAIL);
         pdu_error_details_upsert(PDU_ERR_CODE_CAN_TX_FAIL, 0xFFU, 0x85U);
+    }
+
+    /* ── Reinit counter frame (0x086) — send when any channel was re‑initted ── */
+    {
+        static uint8_t reinit_last_mask = 0U;
+        uint8_t reinit_any = 0U;
+        uint8_t rch2;
+        for (rch2 = 0U; rch2 < PDU_NUM_EFUSES; rch2++)
+        {
+            if (pdu_efuse_reinit_count[rch2] > 0U) { reinit_any |= (uint8_t)(1U << rch2); }
+        }
+        if (reinit_any != reinit_last_mask)
+        {
+            reinit_last_mask = reinit_any;
+            (void)pdu_can_send_reinit_status_frame();
+        }
     }
 
     /* ── Always-sent frames (regardless of debug TTL) ── */
