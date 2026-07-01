@@ -1,6 +1,6 @@
 {
     "mplab.clangd.arguments": [
-        "--compile-commands-dir=${workspaceFolder}\\_build\\SZEN_PDU_0.1\\default"
+        "--compile-commands-dir=${workspaceFolder:SZEN_PDU_0.1}\\_build\\SZEN_PDU_0.1\\default"
     ],
     "mplab.clangd.path": "c:\\Program Files\\Microchip\\xc32\\v5.00\\bin\\xc32-clangd.exe",
     "C_Cpp.intelliSenseEngine": "disabled",
